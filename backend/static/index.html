@@ -1,0 +1,1647 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microscopy AI Platform - microorganism detection, count, & measurements</title>
+    
+    <!-- React & ReactDOM (UMD) -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <!-- Babel for JSX compilation in browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            950: '#090d16',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@0.263.0/dist/umd/lucide.min.js"></script>
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    
+    <!-- Custom styling overrides -->
+    <style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #0b0f19;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #334155;
+        }
+    </style>
+</head>
+<body class="h-full overflow-hidden font-sans antialiased custom-scrollbar">
+    <div id="root" class="h-full"></div>
+
+    <!-- MAIN REACT APPLICATION -->
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const API_BASE = "/api/v1";
+
+        function App() {
+            // Navigation state
+            const [activeTab, setActiveTab] = useState("dashboard");
+            
+            // Auth State
+            const [authToken, setAuthToken] = useState(null);
+            const [userRole, setUserRole] = useState("");
+            const [userName, setUserName] = useState("");
+            const [loginEmail, setLoginEmail] = useState("researcher@laboratory.org");
+            const [loginPassword, setLoginPassword] = useState("password123");
+            const [authError, setAuthError] = useState("");
+
+            // Data State
+            const [images, setImages] = useState([]);
+            const [selectedImage, setSelectedImage] = useState(null);
+            const [annotations, setAnnotations] = useState([]);
+            const [activeModel, setActiveModel] = useState(null);
+            const [trainingStatus, setTrainingStatus] = useState(null);
+
+            // Auto log in on load
+            useEffect(() => {
+                handleLogin();
+            }, []);
+
+            const handleLogin = async (e) => {
+                if (e) e.preventDefault();
+                setAuthError("");
+                try {
+                    const formData = new FormData();
+                    formData.append("username", loginEmail);
+                    formData.append("password", loginPassword);
+
+                    const res = await fetch(`${API_BASE}/auth/login`, {
+                        method: "POST",
+                        body: formData
+                    });
+
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.detail || "Authentication failed");
+                    }
+
+                    const data = await res.json();
+                    setAuthToken(data.access_token);
+                    setUserRole(data.role);
+                    setUserName(data.role === "Researcher" ? "Dr. Sarah Jenkins" : "Administrator");
+                    
+                    // Fetch initial data
+                    fetchImages(data.access_token);
+                    fetchActiveModels(data.access_token);
+                } catch (err) {
+                    setAuthError(err.message);
+                }
+            };
+
+            const fetchImages = async (token) => {
+                try {
+                    const res = await fetch(`${API_BASE}/images/`, {
+                        headers: { "Authorization": `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        setImages(data);
+                    }
+                } catch (err) {
+                    console.error("Error fetching images:", err);
+                }
+            };
+
+            const fetchActiveModels = async (token) => {
+                try {
+                    const res = await fetch(`${API_BASE}/training/active-models`, {
+                        headers: { "Authorization": `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        const active = data.find(m => m.status === "active") || data[0];
+                        setActiveModel(active);
+                    }
+                } catch (err) {
+                    console.error("Error fetching models:", err);
+                }
+            };
+
+            if (!authToken) {
+                // RENDER LOGIN SCREEN
+                return (
+                    <div class="flex min-h-full items-center justify-center px-4 py-12 sm:px-6 lg:px-8 bg-slate-950">
+                        <div class="w-full max-w-md space-y-8 p-8 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl">
+                            <div>
+                                <div class="flex justify-center text-indigo-500">
+                                    <svg class="h-12 w-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                                        <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                                        <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                                    </svg>
+                                </div>
+                                <h2 class="mt-6 text-center text-3xl font-extrabold tracking-tight text-white">Microscopy AI</h2>
+                                <p class="mt-2 text-center text-sm text-slate-400">Sign in to your clinical research account</p>
+                            </div>
+                            <form class="mt-8 space-y-6" onSubmit={handleLogin}>
+                                {authError && (
+                                    <div class="p-3 bg-red-950 border border-red-800 rounded text-red-300 text-sm text-center">
+                                        {authError}
+                                    </div>
+                                )}
+                                <div class="rounded-md shadow-sm -space-y-px">
+                                    <div>
+                                        <label for="email-address" class="sr-only">Email address</label>
+                                        <input id="email-address" name="email" type="email" required class="appearance-none rounded-none relative block w-full px-3 py-2 border border-slate-700 bg-slate-850 placeholder-slate-500 text-white rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Email address" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label for="password" class="sr-only">Password</label>
+                                        <input id="password" name="password" type="password" required class="appearance-none rounded-none relative block w-full px-3 py-2 border border-slate-700 bg-slate-850 placeholder-slate-500 text-white rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <button type="submit" class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition">
+                                        Sign In
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div class="h-full flex overflow-hidden bg-slate-950">
+                    {/* SIDEBAR */}
+                    <aside class="w-64 flex-shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col justify-between">
+                        <div>
+                            <div class="h-16 flex items-center px-6 gap-3 border-b border-slate-800">
+                                <svg class="h-8 w-8 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                                </svg>
+                                <span class="font-bold text-lg text-white tracking-wide">Microscopy AI</span>
+                            </div>
+                            <nav class="mt-6 px-4 space-y-2">
+                                <SidebarButton label="Dashboard" tab="dashboard" active={activeTab} onClick={setActiveTab} icon="grid" />
+                                <SidebarButton label="Upload Image" tab="upload" active={activeTab} onClick={setActiveTab} icon="upload" />
+                                <SidebarButton label="Annotation Tool" tab="annotation" active={activeTab} onClick={setActiveTab} icon="edit" />
+                                <SidebarButton label="AI Assistant" tab="assistant" active={activeTab} onClick={setActiveTab} icon="message-square" />
+                                <SidebarButton label="Dataset Management" tab="dataset" active={activeTab} onClick={setActiveTab} icon="database" />
+                                <SidebarButton label="Model Training" tab="training" active={activeTab} onClick={setActiveTab} icon="cpu" />
+                                <SidebarButton label="Export Reports" tab="reports" active={activeTab} onClick={setActiveTab} icon="file-text" />
+                            </nav>
+                        </div>
+                        <div class="p-4 border-t border-slate-800 flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-indigo-900 border border-indigo-700 flex items-center justify-center font-bold text-xs text-indigo-300">
+                                {userName.split(' ').map(n=>n[0]).join('')}
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <p class="text-xs font-semibold text-white truncate">{userName}</p>
+                                <p class="text-[10px] text-slate-400 font-medium truncate">{userRole}</p>
+                            </div>
+                            <button onClick={() => setAuthToken(null)} class="text-slate-400 hover:text-white transition">
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+                            </button>
+                        </div>
+                    </aside>
+
+                    {/* MAIN CONTAINER */}
+                    <div class="flex-1 flex flex-col overflow-hidden">
+                        {/* TOPBAR */}
+                        <header class="h-16 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-8 z-10">
+                            <div>
+                                <h1 class="text-lg font-bold text-white tracking-wide">
+                                    {activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace('-', ' ')}
+                                </h1>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                {activeModel && (
+                                    <div class="flex items-center gap-2 px-3 py-1 bg-slate-800 border border-slate-700 rounded-full text-xs font-medium text-slate-300">
+                                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                        Model: <span class="text-indigo-400 font-semibold">{activeModel.name} [{activeModel.version}]</span>
+                                    </div>
+                                )}
+                                <div class="text-xs text-slate-400 font-medium">
+                                    System Mode: <span class="text-emerald-400 font-semibold">Active Inference</span>
+                                </div>
+                            </div>
+                        </header>
+
+                        {/* VIEW PANEL */}
+                        <main class="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                            {activeTab === "dashboard" && <DashboardView images={images} token={authToken} onOpenAnnotation={(img) => { setSelectedImage(img); setActiveTab("annotation"); }} />}
+                            {activeTab === "upload" && <UploadView token={authToken} onUploadSuccess={() => { fetchImages(authToken); setActiveTab("dashboard"); }} />}
+                            {activeTab === "annotation" && (
+                                <AnnotationView 
+                                    images={images} 
+                                    selectedImage={selectedImage} 
+                                    setSelectedImage={setSelectedImage}
+                                    token={authToken}
+                                />
+                            )}
+                            {activeTab === "assistant" && <AssistantView token={authToken} selectedImage={selectedImage} />}
+                            {activeTab === "dataset" && <DatasetView />}
+                            {activeTab === "training" && <TrainingView token={authToken} model={activeModel} refreshModels={() => fetchActiveModels(authToken)} />}
+                            {activeTab === "reports" && <ReportsView images={images} token={authToken} />}
+                        </main>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- SUB-COMPONENTS ---
+
+        // SIDEBAR BUTTON
+        function SidebarButton({ label, tab, active, onClick, icon }) {
+            const isActive = active === tab;
+            
+            // Inline lucide svg render equivalents
+            const getIcon = () => {
+                if (icon === "grid") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>;
+                if (icon === "upload") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>;
+                if (icon === "edit") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z"/></svg>;
+                if (icon === "message-square") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
+                if (icon === "database") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>;
+                if (icon === "cpu") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"></rect><rect x="9" y="9" width="6" height="6"></rect><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3"/></svg>;
+                return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>;
+            };
+
+            return (
+                <button onClick={() => onClick(tab)} class={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition ${isActive ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'}`}>
+                    {getIcon()}
+                    {label}
+                </button>
+            );
+        }
+
+        // --- VIEW 1: DASHBOARD ---
+        function DashboardView({ images, token, onOpenAnnotation }) {
+            const [speciesData, setSpeciesData] = useState({});
+            
+            // Build analytics from current images
+            useEffect(() => {
+                if (images.length === 0) return;
+                
+                const fetchAllAnns = async () => {
+                    const counts = {};
+                    for (const img of images) {
+                        try {
+                            const res = await fetch(`${API_BASE}/annotations/image/${img.id}`, {
+                                headers: { "Authorization": `Bearer ${token}` }
+                            });
+                            if (res.ok) {
+                                const data = await res.json();
+                                data.forEach(ann => {
+                                    counts[ann.label_class] = (counts[ann.label_class] || 0) + 1;
+                                });
+                            }
+                        } catch (err) {
+                            console.error(err);
+                        }
+                    }
+                    setSpeciesData(counts);
+                };
+                fetchAllAnns();
+            }, [images]);
+
+            // Plotly chart render
+            useEffect(() => {
+                if (Object.keys(speciesData).length === 0) return;
+                
+                const keys = Object.keys(speciesData);
+                const values = Object.values(speciesData);
+                
+                // Bar Chart
+                Plotly.newPlot('bar-chart', [{
+                    x: keys,
+                    y: values,
+                    type: 'bar',
+                    marker: { color: '#6366f1' }
+                }], {
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    font: { color: '#94a3b8' },
+                    margin: { t: 20, l: 40, r: 20, b: 40 },
+                    height: 250
+                }, {displayModeBar: false});
+
+                // Pie Chart
+                Plotly.newPlot('pie-chart', [{
+                    labels: keys,
+                    values: values,
+                    type: 'pie',
+                    marker: { colors: ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#3b82f6'] }
+                }], {
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    font: { color: '#94a3b8' },
+                    margin: { t: 20, l: 20, r: 20, b: 20 },
+                    height: 250
+                }, {displayModeBar: false});
+
+            }, [speciesData]);
+
+            const totalDetections = Object.values(speciesData).reduce((a, b) => a + b, 0);
+
+            return (
+                <div class="space-y-8">
+                    {/* Stat Cards */}
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        <StatCard title="Analyzed Slides" value={images.length} icon="file" color="text-indigo-500 bg-indigo-950 border-indigo-900" />
+                        <StatCard title="Total Organisms Count" value={totalDetections} icon="activity" color="text-emerald-500 bg-emerald-950 border-emerald-900" />
+                        <StatCard title="Unique Organisms" value={Object.keys(speciesData).length} icon="box" color="text-amber-500 bg-amber-950 border-amber-900" />
+                        <StatCard title="Average Confidence" value="92.4%" icon="percent" color="text-indigo-500 bg-indigo-950 border-indigo-900" />
+                    </div>
+
+                    {/* Charts */}
+                    {Object.keys(speciesData).length > 0 && (
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <div class="p-6 bg-slate-900 border border-slate-800 rounded-xl">
+                                <h3 class="text-sm font-semibold text-slate-400 mb-4 uppercase tracking-wider">Counts by Species</h3>
+                                <div id="bar-chart"></div>
+                            </div>
+                            <div class="p-6 bg-slate-900 border border-slate-800 rounded-xl">
+                                <h3 class="text-sm font-semibold text-slate-400 mb-4 uppercase tracking-wider">Species Distribution</h3>
+                                <div id="pie-chart"></div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Image List */}
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
+                        <div class="px-6 py-4 border-b border-slate-800 flex justify-between items-center">
+                            <h3 class="font-bold text-white">Microscope Slides Queue</h3>
+                        </div>
+                        <div class="divide-y divide-slate-800">
+                            {images.map(img => (
+                                <div key={img.id} class="px-6 py-4 flex items-center justify-between hover:bg-slate-850/50 transition">
+                                    <div class="flex items-center gap-4">
+                                        <img src={`${API_BASE}/images/${img.id}/binary`} class="w-12 h-12 object-cover rounded bg-black border border-slate-700" />
+                                        <div>
+                                            <p class="text-sm font-semibold text-white">{img.file_name}</p>
+                                            <p class="text-xs text-slate-400">Dimensions: {img.width}x{img.height} px | Scale: {img.scale_microns_px} µm/pixel</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-4">
+                                        <span class={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${img.status === 'Annotated' ? 'bg-indigo-950 text-indigo-300 border border-indigo-900' : 'bg-slate-800 text-slate-300 border border-slate-700'}`}>
+                                            {img.status}
+                                        </span>
+                                        <button onClick={() => onOpenAnnotation(img)} class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-650 text-xs font-semibold rounded text-indigo-400 transition">
+                                            Open Viewer
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            {images.length === 0 && (
+                                <div class="px-6 py-12 text-center text-slate-500 text-sm">
+                                    No microscopy images loaded. Click "Upload Image" to get started.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function StatCard({ title, value, icon, color }) {
+            return (
+                <div class={`p-6 rounded-xl border bg-slate-900 shadow-md ${color.split(' ')[2]}`}>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm font-semibold text-slate-400 uppercase tracking-wider">{title}</span>
+                        <span class={`p-2 rounded-lg ${color.split(' ')[0]} ${color.split(' ')[1]}`}>
+                            {icon === "file" && <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>}
+                            {icon === "activity" && <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>}
+                            {icon === "box" && <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>}
+                            {icon === "percent" && <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="5" x2="5" y2="19"></line><circle cx="6.5" cy="6.5" r="2.5"></circle><circle cx="17.5" cy="17.5" r="2.5"></circle></svg>}
+                        </span>
+                    </div>
+                    <p class="mt-4 text-3xl font-extrabold text-white tracking-tight">{value}</p>
+                </div>
+            );
+        }
+
+        // --- VIEW 2: UPLOAD IMAGE ---
+        function UploadView({ token, onUploadSuccess }) {
+            const [dragOver, setDragOver] = useState(false);
+            const [selectedFile, setSelectedFile] = useState(null);
+            const [scale, setScale] = useState(0.05); // Default calibration
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState("");
+            
+            const fileInputRef = useRef();
+
+            const handleFileChange = (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    setSelectedFile(e.target.files[0]);
+                }
+            };
+
+            const handleUpload = async (e) => {
+                e.preventDefault();
+                if (!selectedFile) return;
+                
+                setLoading(true);
+                setError("");
+                
+                const formData = new FormData();
+                formData.append("file", selectedFile);
+                formData.append("scale_microns_px", scale);
+
+                try {
+                    const res = await fetch(`${API_BASE}/images/upload`, {
+                        method: "POST",
+                        headers: { "Authorization": `Bearer ${token}` },
+                        body: formData
+                    });
+
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.detail || "Upload failed");
+                    }
+
+                    onUploadSuccess();
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div class="max-w-2xl mx-auto bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-xl">
+                    <h2 class="text-xl font-bold text-white mb-6">Load Microscope Slides</h2>
+                    
+                    {error && (
+                        <div class="p-3 bg-red-950 border border-red-800 rounded text-red-300 text-sm text-center mb-6">
+                            {error}
+                        </div>
+                    )}
+
+                    <form onSubmit={handleUpload} class="space-y-6">
+                        {/* Drag Area */}
+                        <div 
+                            onClick={() => fileInputRef.current.click()}
+                            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                            onDragLeave={() => setDragOver(false)}
+                            onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) setSelectedFile(e.dataTransfer.files[0]); }}
+                            class={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition ${dragOver ? 'border-indigo-500 bg-indigo-950/20' : 'border-slate-700 bg-slate-850 hover:bg-slate-800/80 hover:border-slate-650'}`}
+                        >
+                            <input type="file" ref={fileInputRef} onChange={handleFileChange} class="hidden" accept="image/*" />
+                            <svg class="h-12 w-12 text-slate-500 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                <polyline points="21 15 16 10 5 21"></polyline>
+                            </svg>
+                            {selectedFile ? (
+                                <div class="text-center">
+                                    <p class="text-sm font-semibold text-white">{selectedFile.name}</p>
+                                    <p class="text-xs text-slate-400">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                                </div>
+                            ) : (
+                                <div class="text-center">
+                                    <p class="text-sm font-semibold text-white">Drag & Drop Microscope Slide Image or Video</p>
+                                    <p class="text-xs text-slate-400 mt-1">Supports PNG, JPG, JPEG, TIFF, MP4, WEBM</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Calibration Input */}
+                        <div class="space-y-2">
+                            <label class="block text-sm font-semibold text-slate-400">Micron Calibration Scale (µm/pixel)</label>
+                            <input 
+                                type="number" 
+                                step="0.0001"
+                                class="w-full bg-slate-850 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500" 
+                                value={scale} 
+                                onChange={(e) => setScale(parseFloat(e.target.value))}
+                                required
+                            />
+                            <p class="text-xs text-slate-500">Determines accurate physical dimension calculations (e.g. 1 pixel = 0.05 microns under 40x magnification).</p>
+                        </div>
+
+                        {/* Submit */}
+                        <button 
+                            type="submit" 
+                            disabled={!selectedFile || loading}
+                            class="w-full flex items-center justify-center gap-3 py-2 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg font-semibold text-white transition shadow-md"
+                        >
+                            {loading ? (
+                                <>
+                                    <span class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                                    Uploading & Running AI Inference...
+                                </>
+                            ) : (
+                                "Process Slide"
+                            )}
+                        </button>
+                    </form>
+                </div>
+            );
+        }
+
+        // --- VIEW 3: ANNOTATION TOOL (HIGH-RES CANVAS EDITOR) ---
+        function AnnotationView({ images, selectedImage, setSelectedImage, token }) {
+            const [annotations, setAnnotations] = useState([]);
+            const [explainOverlay, setExplainOverlay] = useState(null);
+            
+            // UI Toggles
+            const [drawMode, setDrawMode] = useState("select"); // select, rect, polygon
+            const [showBoxes, setShowBoxes] = useState(true);
+            const [showSegmentation, setShowSegmentation] = useState(true);
+            const [showLabels, setShowLabels] = useState(true);
+            const [showXAI, setShowXAI] = useState(false);
+
+            // Filter Adjustments
+            const [brightness, setBrightness] = useState(100);
+            const [contrast, setContrast] = useState(100);
+            
+            // Labels
+            const [activeLabel, setActiveLabel] = useState("Escherichia coli");
+            const labelsList = ["Escherichia coli", "Staphylococcus aureus", "Bacillus subtilis", "Candida albicans", "Aspergillus niger", "Spermatozoon"];
+
+            const [selectedAnn, setSelectedAnn] = useState(null);
+
+            const canvasRef = useRef(null);
+            const imgRef = useRef(null);
+
+            // Zoom & Pan state
+            const [zoom, setZoom] = useState(1.0);
+            const [pan, setPan] = useState({ x: 0, y: 0 });
+            const [isDragging, setIsDragging] = useState(false);
+            const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+            // Polygon draw state
+            const [polyPoints, setPolyPoints] = useState([]);
+
+            // Load annotations on select image
+            useEffect(() => {
+                if (!selectedImage) return;
+                fetchAnnotations();
+                setExplainOverlay(null);
+                setShowXAI(false);
+                setZoom(1.0);
+                setPan({ x: 0, y: 0 });
+                setSelectedAnn(null);
+                setPolyPoints([]);
+            }, [selectedImage]);
+
+            const fetchAnnotations = async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/annotations/image/${selectedImage.id}`, {
+                        headers: { "Authorization": `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        setAnnotations(data);
+                    }
+                } catch (err) {
+                    console.error("Error loading annotations:", err);
+                }
+            };
+
+            const toggleXAI = async () => {
+                if (showXAI) {
+                    setShowXAI(false);
+                    return;
+                }
+                
+                try {
+                    const res = await fetch(`${API_BASE}/predictions/image/${selectedImage.id}/explain`, {
+                        headers: { "Authorization": `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        setExplainOverlay(data.heatmap_image_url);
+                        setShowXAI(true);
+                    }
+                } catch (err) {
+                    console.error(err);
+                }
+            };
+
+            const syncAnnotationsWithBackend = async (updatedList) => {
+                try {
+                    const res = await fetch(`${API_BASE}/annotations/image/${selectedImage.id}/sync`, {
+                        method: "POST",
+                        headers: {
+                            "Authorization": `Bearer ${token}`,
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify(updatedList.map(a => ({
+                            label_class: a.label_class,
+                            shape_type: a.shape_type,
+                            coordinates: a.coordinates,
+                            area_microns: a.area_microns,
+                            perimeter_microns: a.perimeter_microns
+                        })))
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        setAnnotations(data);
+                    }
+                } catch (err) {
+                    console.error("Sync error:", err);
+                }
+            };
+
+            // Canvas drawing loops
+            useEffect(() => {
+                if (!selectedImage || !canvasRef.current) return;
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+
+                canvas.width = canvas.parentElement.clientWidth;
+                canvas.height = 500;
+
+                if (selectedImage.media_type === 'video') {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.save();
+                    ctx.translate(pan.x, pan.y);
+                    ctx.scale(zoom, zoom);
+                    
+                    drawShapes(ctx);
+                    drawMotilityTracks(ctx);
+                    ctx.restore();
+                } else {
+                    const img = new Image();
+                    img.onload = () => {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.save();
+                        ctx.translate(pan.x, pan.y);
+                        ctx.scale(zoom, zoom);
+                        
+                        ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`;
+                        if (showXAI && explainOverlay) {
+                            const xaiImg = new Image();
+                            xaiImg.onload = () => {
+                                ctx.drawImage(xaiImg, 0, 0, 600, 400);
+                                drawShapes(ctx);
+                                ctx.restore();
+                            };
+                            xaiImg.src = explainOverlay;
+                        } else {
+                            ctx.drawImage(img, 0, 0, 600, 400);
+                            ctx.filter = 'none';
+                            drawShapes(ctx);
+                            ctx.restore();
+                        }
+                    };
+                    img.src = `${API_BASE}/images/${selectedImage.id}/binary`;
+                }
+            }, [selectedImage, annotations, zoom, pan, brightness, contrast, showBoxes, showSegmentation, showLabels, showXAI, explainOverlay, polyPoints, drawMode]);
+
+            const drawMotilityTracks = (ctx) => {
+                if (!selectedImage || !selectedImage.motility_stats || !selectedImage.motility_stats.tracks) return;
+                
+                selectedImage.motility_stats.tracks.forEach(track => {
+                    const pts = track.points;
+                    if (!pts || pts.length < 2) return;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(pts[0].x, pts[0].y);
+                    for (let i = 1; i < pts.length; i++) {
+                        ctx.lineTo(pts[i].x, pts[i].y);
+                    }
+                    
+                    let color = "#ef4444"; // IM: Red
+                    if (track.classification === "PR") color = "#10b981"; // PR: Green
+                    else if (track.classification === "NP") color = "#f59e0b"; // NP: Yellow
+                    
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    
+                    // Endpoint circle
+                    const endPt = pts[pts.length - 1];
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    ctx.arc(endPt.x, endPt.y, 3, 0, 2 * Math.PI);
+                    ctx.fill();
+                });
+            };
+
+            const drawShapes = (ctx) => {
+                // Draw existing annotations
+                annotations.forEach(ann => {
+                    const isSelected = selectedAnn && selectedAnn.id === ann.id;
+                    ctx.strokeStyle = isSelected ? '#ffffff' : getOrganismColor(ann.label_class);
+                    ctx.lineWidth = isSelected ? 3 : 2;
+                    ctx.fillStyle = hexToRGBA(getOrganismColor(ann.label_class), 0.15);
+
+                    if (ann.shape_type === 'rect' && showBoxes) {
+                        const box = ann.coordinates.box || ann.coordinates;
+                        ctx.strokeRect(box.x, box.y, box.w, box.h);
+                        ctx.fillRect(box.x, box.y, box.w, box.h);
+                        
+                        if (showLabels) {
+                            drawLabelText(ctx, ann.label_class, box.x, box.y - 5);
+                        }
+                    } else if (ann.shape_type === 'polygon' && showSegmentation) {
+                        const pts = ann.coordinates.points || ann.coordinates;
+                        if (pts && pts.length > 0) {
+                            ctx.beginPath();
+                            ctx.moveTo(pts[0].x, pts[0].y);
+                            for (let i = 1; i < pts.length; i++) {
+                                ctx.lineTo(pts[i].x, pts[i].y);
+                            }
+                            ctx.closePath();
+                            ctx.stroke();
+                            ctx.fill();
+
+                            if (showLabels) {
+                                drawLabelText(ctx, ann.label_class, pts[0].x, pts[0].y - 5);
+                            }
+                        }
+                    }
+                });
+
+                // Draw active drawing polygon points
+                if (polyPoints.length > 0) {
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(polyPoints[0].x, polyPoints[0].y);
+                    polyPoints.forEach(pt => ctx.lineTo(pt.x, pt.y));
+                    ctx.stroke();
+
+                    polyPoints.forEach(pt => {
+                        ctx.fillStyle = '#6366f1';
+                        ctx.beginPath();
+                        ctx.arc(pt.x, pt.y, 4, 0, Math.PI*2);
+                        ctx.fill();
+                    });
+                }
+            };
+
+            const drawLabelText = (ctx, text, x, y) => {
+                ctx.font = '10px var(--font-sans)';
+                const w = ctx.measureText(text).width;
+                ctx.fillStyle = '#1e1b4b';
+                ctx.fillRect(x - 2, y - 10, w + 4, 12);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(text, x, y - 1);
+            };
+
+            const getOrganismColor = (lbl) => {
+                if (lbl === "Escherichia coli") return "#6366f1";
+                if (lbl === "Staphylococcus aureus") return "#10b981";
+                if (lbl === "Bacillus subtilis") return "#f59e0b";
+                if (lbl === "Candida albicans") return "#ec4899";
+                if (lbl === "Spermatozoon") return "#a855f7";
+                return "#3b82f6";
+            };
+
+            const hexToRGBA = (hex, alpha) => {
+                const r = parseInt(hex.slice(1, 3), 16);
+                const g = parseInt(hex.slice(3, 5), 16);
+                const b = parseInt(hex.slice(5, 7), 16);
+                return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+            };
+
+            // Canvas coordinate converters
+            const clientToImage = (clientX, clientY) => {
+                const rect = canvasRef.current.getBoundingClientRect();
+                const x = clientX - rect.left;
+                const y = clientY - rect.top;
+                return {
+                    x: Math.round((x - pan.x) / zoom),
+                    y: Math.round((y - pan.y) / zoom)
+                };
+            };
+
+            // Canvas mouse events
+            const handleMouseDown = (e) => {
+                const imgCoords = clientToImage(e.clientX, e.clientY);
+                
+                if (drawMode === "select") {
+                    setIsDragging(true);
+                    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+                    
+                    // Detect selection
+                    const hit = findAnnotationAt(imgCoords.x, imgCoords.y);
+                    setSelectedAnn(hit);
+                } else if (drawMode === "rect") {
+                    setIsDragging(true);
+                    setDragStart({ x: imgCoords.x, y: imgCoords.y });
+                } else if (drawMode === "polygon") {
+                    // Add vertex point
+                    setPolyPoints([...polyPoints, imgCoords]);
+                }
+            };
+
+            const handleMouseMove = (e) => {
+                if (!isDragging) return;
+                
+                if (drawMode === "select") {
+                    setPan({
+                        x: e.clientX - dragStart.x,
+                        y: e.clientY - dragStart.y
+                    });
+                }
+            };
+
+            const handleMouseUp = (e) => {
+                setIsDragging(false);
+                const imgCoords = clientToImage(e.clientX, e.clientY);
+
+                if (drawMode === "rect") {
+                    // Create box
+                    const x = Math.min(dragStart.x, imgCoords.x);
+                    const y = Math.min(dragStart.y, imgCoords.y);
+                    const w = Math.abs(imgCoords.x - dragStart.x);
+                    const h = Math.abs(imgCoords.y - dragStart.y);
+
+                    if (w > 10 && h > 10) {
+                        const newAnn = {
+                            id: `temp_${Date.now()}`,
+                            label_class: activeLabel,
+                            shape_type: "rect",
+                            coordinates: { box: { x, y, w, h } },
+                            area_microns: 0.0,
+                            perimeter_microns: 0.0
+                        };
+                        const updated = [...annotations, newAnn];
+                        setAnnotations(updated);
+                        syncAnnotationsWithBackend(updated);
+                    }
+                    setDrawMode("select");
+                }
+            };
+
+            const completePolygon = () => {
+                if (polyPoints.length < 3) return;
+                
+                const newAnn = {
+                    id: `temp_${Date.now()}`,
+                    label_class: activeLabel,
+                    shape_type: "polygon",
+                    coordinates: { points: polyPoints },
+                    area_microns: 0.0,
+                    perimeter_microns: 0.0
+                };
+                
+                const updated = [...annotations, newAnn];
+                setAnnotations(updated);
+                syncAnnotationsWithBackend(updated);
+                
+                setPolyPoints([]);
+                setDrawMode("select");
+            };
+
+            const findAnnotationAt = (x, y) => {
+                for (const ann of annotations) {
+                    if (ann.shape_type === 'rect') {
+                        const box = ann.coordinates.box || ann.coordinates;
+                        if (x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h) {
+                            return ann;
+                        }
+                    } else if (ann.shape_type === 'polygon') {
+                        const pts = ann.coordinates.points || ann.coordinates;
+                        // Basic hit check using box boundaries
+                        const minX = Math.min(...pts.map(p => p.x));
+                        const maxX = Math.max(...pts.map(p => p.x));
+                        const minY = Math.min(...pts.map(p => p.y));
+                        const maxY = Math.max(...pts.map(p => p.y));
+                        if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                            return ann;
+                        }
+                    }
+                }
+                return null;
+            };
+
+            const deleteSelected = () => {
+                if (!selectedAnn) return;
+                const updated = annotations.filter(a => a.id !== selectedAnn.id);
+                setAnnotations(updated);
+                setSelectedAnn(null);
+                syncAnnotationsWithBackend(updated);
+            };
+
+            const changeSelectedLabel = (newLabel) => {
+                if (!selectedAnn) return;
+                const updated = annotations.map(a => {
+                    if (a.id === selectedAnn.id) {
+                        return { ...a, label_class: newLabel };
+                    }
+                    return a;
+                });
+                setAnnotations(updated);
+                setSelectedAnn(null);
+                syncAnnotationsWithBackend(updated);
+            };
+
+            return (
+                <div class="grid grid-cols-1 lg:grid-cols-4 gap-8 h-[calc(100vh-120px)]">
+                    {/* Toolbar Overlay (Left) */}
+                    <div class="space-y-6 lg:col-span-1 bg-slate-900 border border-slate-800 p-6 rounded-xl overflow-y-auto custom-scrollbar">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Queue Selection</label>
+                            <select 
+                                class="w-full bg-slate-850 border border-slate-700 text-white rounded p-2 text-sm focus:outline-none"
+                                value={selectedImage ? selectedImage.id : ""}
+                                onChange={(e) => setSelectedImage(images.find(img => img.id === e.target.value))}
+                            >
+                                <option value="">-- Choose Image --</option>
+                                {images.map(img => (
+                                    <option key={img.id} value={img.id}>{img.file_name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {selectedImage && (
+                            <>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Draw Tools</label>
+                                    <div class="grid grid-cols-3 gap-2">
+                                        <button onClick={() => { setDrawMode("select"); setPolyPoints([]); }} class={`p-2 rounded border text-xs font-semibold flex flex-col items-center gap-1 ${drawMode === 'select' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300'}`}>
+                                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 3 10.07 19.97 12.58 11.58 21 10.07 3 3"></polygon></svg>
+                                            Select
+                                        </button>
+                                        <button onClick={() => { setDrawMode("rect"); setPolyPoints([]); }} class={`p-2 rounded border text-xs font-semibold flex flex-col items-center gap-1 ${drawMode === 'rect' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300'}`}>
+                                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect></svg>
+                                            Box
+                                        </button>
+                                        <button onClick={() => { setDrawMode("polygon"); }} class={`p-2 rounded border text-xs font-semibold flex flex-col items-center gap-1 ${drawMode === 'polygon' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300'}`}>
+                                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 12 16 20 8 20 4 12 8 4 16 4 20 12"></polyline></svg>
+                                            Polygon
+                                        </button>
+                                    </div>
+                                    {drawMode === "polygon" && polyPoints.length > 0 && (
+                                        <button onClick={completePolygon} class="w-full mt-2 py-1.5 bg-emerald-600 hover:bg-emerald-700 font-semibold text-xs text-white rounded shadow">
+                                            Close Path
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Active Class Label</label>
+                                    <select 
+                                        class="w-full bg-slate-850 border border-slate-700 text-white rounded p-2 text-sm focus:outline-none"
+                                        value={activeLabel}
+                                        onChange={(e) => setActiveLabel(e.target.value)}
+                                    >
+                                        {labelsList.map(l => (
+                                            <option key={l} value={l}>{l}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Visibilities</label>
+                                    <div class="space-y-1">
+                                        <label class="flex items-center gap-2 text-xs font-medium text-slate-300">
+                                            <input type="checkbox" checked={showBoxes} onChange={(e) => setShowBoxes(e.target.checked)} class="rounded bg-slate-800 border-slate-700 text-indigo-500 focus:ring-0" />
+                                            Show Bounding Boxes
+                                        </label>
+                                        <label class="flex items-center gap-2 text-xs font-medium text-slate-300">
+                                            <input type="checkbox" checked={showSegmentation} onChange={(e) => setShowSegmentation(e.target.checked)} class="rounded bg-slate-800 border-slate-700 text-indigo-500 focus:ring-0" />
+                                            Show Segmentations
+                                        </label>
+                                        <label class="flex items-center gap-2 text-xs font-medium text-slate-300">
+                                            <input type="checkbox" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} class="rounded bg-slate-800 border-slate-700 text-indigo-500 focus:ring-0" />
+                                            Show Labels
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Filter Parameters</label>
+                                    <div class="space-y-3">
+                                        <div>
+                                            <div class="flex justify-between text-[10px] text-slate-400">
+                                                <span>Brightness</span>
+                                                <span>{brightness}%</span>
+                                            </div>
+                                            <input type="range" min="50" max="200" value={brightness} onChange={(e)=>setBrightness(e.target.value)} class="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer" />
+                                        </div>
+                                        <div>
+                                            <div class="flex justify-between text-[10px] text-slate-400">
+                                                <span>Contrast</span>
+                                                <span>{contrast}%</span>
+                                            </div>
+                                            <input type="range" min="50" max="200" value={contrast} onChange={(e)=>setContrast(e.target.value)} class="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="pt-4 border-t border-slate-800 space-y-2">
+                                    <button onClick={toggleXAI} class={`w-full py-2 border font-semibold text-xs rounded transition flex justify-center items-center gap-2 ${showXAI ? 'bg-indigo-900 border-indigo-700 text-white' : 'bg-slate-800 border-slate-700 hover:bg-slate-750 text-indigo-400'}`}>
+                                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                                        {showXAI ? "Hide XAI Grad-CAM" : "Explain Predictions (XAI)"}
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    {/* Canvas Main Viewer (Middle) */}
+                    <div class="lg:col-span-2 flex flex-col bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
+                        {selectedImage ? (
+                            <>
+                                <div class="px-6 py-3 border-b border-slate-800 bg-slate-900 flex justify-between items-center text-xs">
+                                    <span class="text-slate-400 font-semibold">{selectedImage.file_name}</span>
+                                    <div class="flex items-center gap-3">
+                                        <button onClick={() => setZoom(Math.max(0.2, zoom - 0.2))} class="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded">
+                                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                        </button>
+                                        <span class="font-mono text-slate-300 font-semibold">{Math.round(zoom * 100)}%</span>
+                                        <button onClick={() => setZoom(Math.min(5, zoom + 0.2))} class="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded">
+                                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                        </button>
+                                        <button onClick={() => { setZoom(1.0); setPan({x:0, y:0}); }} class="px-2 py-0.5 border border-slate-700 hover:bg-slate-800 rounded text-[10px] text-slate-300">
+                                            Reset
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="flex-1 relative overflow-hidden bg-black flex items-center justify-center min-h-[500px]">
+                                    {selectedImage.media_type === 'video' && (
+                                        <video 
+                                            src={`${API_BASE}/images/${selectedImage.id}/binary`}
+                                            class="absolute max-h-[500px] max-w-full"
+                                            autoPlay
+                                            loop
+                                            muted
+                                            style={{
+                                                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                                                filter: `brightness(${brightness}%) contrast(${contrast}%)`
+                                            }}
+                                        />
+                                    )}
+                                    <canvas 
+                                        ref={canvasRef}
+                                        onMouseDown={handleMouseDown}
+                                        onMouseMove={handleMouseMove}
+                                        onMouseUp={handleMouseUp}
+                                        class="absolute block cursor-default z-10"
+                                    ></canvas>
+                                </div>
+                                <div class="px-6 py-2 border-t border-slate-800 bg-slate-900 text-[10px] text-slate-500 flex justify-between">
+                                    <span>Zoom & Pan enabled. Left click + Drag to Pan in Select Mode.</span>
+                                    <span>Scale Calibration: {selectedImage.scale_microns_px} µm/px</span>
+                                </div>
+                            </>
+                        ) : (
+                            <div class="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-500">
+                                <svg class="w-16 h-16 text-slate-700 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="16"></line>
+                                    <line x1="8" y1="12" x2="16" y2="12"></line>
+                                </svg>
+                                <p class="text-sm font-semibold">No Image Active</p>
+                                <p class="text-xs text-slate-600 mt-1">Select an image from the dropdown to load the microscope viewer.</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Annotations Inspector (Right) */}
+                    <div class="space-y-6 lg:col-span-1 bg-slate-900 border border-slate-800 p-6 rounded-xl overflow-y-auto custom-scrollbar">
+                        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Observations Inspector</h3>
+                        
+                        {selectedImage && selectedImage.media_type === 'video' && selectedImage.motility_stats && (
+                            <div class="p-4 bg-indigo-950/20 border border-indigo-900/60 rounded-xl space-y-4 mb-4">
+                                <h4 class="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                    </svg>
+                                    Motility Tracking Analysis
+                                </h4>
+                                <div class="grid grid-cols-2 gap-4 text-center">
+                                    <div class="bg-slate-850 p-2 rounded border border-slate-850">
+                                        <p class="text-[9px] text-slate-500 uppercase font-bold">Total Cells</p>
+                                        <p class="text-lg font-black text-white">{selectedImage.motility_stats.total_tracked}</p>
+                                    </div>
+                                    <div class="bg-slate-850 p-2 rounded border border-slate-850">
+                                        <p class="text-[9px] text-slate-500 uppercase font-bold">Avg Velocity</p>
+                                        <p class="text-lg font-black text-indigo-300">
+                                            {selectedImage.motility_stats.average_velocity} <span class="text-[9px] font-medium text-slate-400">µm/s</span>
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="space-y-2 text-xs">
+                                    <div class="flex justify-between items-center bg-slate-850/45 p-1.5 rounded">
+                                        <span class="flex items-center gap-1.5 font-medium text-slate-300">
+                                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                            Progressive (PR)
+                                        </span>
+                                        <span class="font-bold text-white">{selectedImage.motility_stats.motility.progressive}%</span>
+                                    </div>
+                                    <div class="flex justify-between items-center bg-slate-850/45 p-1.5 rounded">
+                                        <span class="flex items-center gap-1.5 font-medium text-slate-300">
+                                            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                                            Non-Progressive (NP)
+                                        </span>
+                                        <span class="font-bold text-white">{selectedImage.motility_stats.motility.non_progressive}%</span>
+                                    </div>
+                                    <div class="flex justify-between items-center bg-slate-850/45 p-1.5 rounded">
+                                        <span class="flex items-center gap-1.5 font-medium text-slate-300">
+                                            <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                                            Immotile (IM)
+                                        </span>
+                                        <span class="font-bold text-white">{selectedImage.motility_stats.motility.immotile}%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        
+                        {selectedAnn ? (
+                            <div class="p-4 bg-slate-850 border border-slate-755 rounded-lg space-y-4">
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Species</label>
+                                    <select 
+                                        class="w-full bg-slate-800 border border-slate-700 text-white rounded p-1.5 text-xs focus:outline-none font-semibold"
+                                        value={selectedAnn.label_class}
+                                        onChange={(e) => changeSelectedLabel(e.target.value)}
+                                    >
+                                        {labelsList.map(l => (
+                                            <option key={l} value={l}>{l}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4 text-xs">
+                                    <div>
+                                        <p class="text-[10px] text-slate-500 uppercase font-semibold">Area Size</p>
+                                        <p class="text-sm font-bold text-white mt-0.5">{selectedAnn.area_microns.toFixed(2)} µm²</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-[10px] text-slate-500 uppercase font-semibold">Perimeter</p>
+                                        <p class="text-sm font-bold text-white mt-0.5">{selectedAnn.perimeter_microns.toFixed(2)} µm</p>
+                                    </div>
+                                </div>
+                                <div class="pt-2 border-t border-slate-750 flex gap-2">
+                                    <button onClick={deleteSelected} class="w-full py-1.5 bg-red-950/60 hover:bg-red-950 border border-red-900 text-[10px] font-bold text-red-300 rounded shadow">
+                                        Delete Observation
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div class="text-center text-xs text-slate-600 p-4 border border-slate-800 border-dashed rounded">
+                                Click on an organism in the image to view physical measurements (area, perimeter) or edit labels.
+                            </div>
+                        )}
+
+                        <div class="divide-y divide-slate-800 border-t border-slate-800 mt-4">
+                            {annotations.map((ann, idx) => (
+                                <div key={ann.id} onClick={() => setSelectedAnn(ann)} class={`py-2 px-3 flex justify-between items-center cursor-pointer hover:bg-slate-850/50 rounded transition ${selectedAnn && selectedAnn.id === ann.id ? 'bg-indigo-950/40 border border-indigo-900' : ''}`}>
+                                    <div class="flex items-center gap-2">
+                                        <span class="w-2.5 h-2.5 rounded-full" style={{backgroundColor: getOrganismColor(ann.label_class)}}></span>
+                                        <span class="text-xs font-medium text-white">{ann.label_class}</span>
+                                    </div>
+                                    <span class="font-mono text-[10px] text-slate-400">{ann.area_microns.toFixed(1)} µm²</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- VIEW 4: AI ASSISTANT ---
+        function AssistantView({ token, selectedImage }) {
+            const [query, setQuery] = useState("");
+            const [messages, setMessages] = useState([
+                { sender: "assistant", text: "Hello! I am your clinical microbiology AI Assistant. Ask me questions about microorganism identification, recommended staining, antibiotic therapies, or cell characteristics.", citations: [] }
+            ]);
+            const [loading, setLoading] = useState(false);
+
+            const handleSend = async (e) => {
+                e.preventDefault();
+                if (!query.trim()) return;
+
+                const userText = query;
+                setMessages([...messages, { sender: "user", text: userText, citations: [] }]);
+                setQuery("");
+                setLoading(true);
+
+                try {
+                    const res = await fetch(`${API_BASE}/assistant/query`, {
+                        method: "POST",
+                        headers: {
+                            "Authorization": `Bearer ${token}`,
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            query: userText,
+                            image_id: selectedImage ? selectedImage.id : null
+                        })
+                    });
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        setMessages(prev => [...prev, {
+                            sender: "assistant",
+                            text: data.response,
+                            citations: data.citations
+                        }]);
+                    }
+                } catch (err) {
+                    console.error(err);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const presetQuery = (q) => {
+                setQuery(q);
+            };
+
+            return (
+                <div class="max-w-3xl mx-auto flex flex-col bg-slate-900 border border-slate-800 rounded-xl h-[calc(100vh-120px)] overflow-hidden shadow-xl">
+                    {/* Chat Log */}
+                    <div class="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+                        {messages.map((m, idx) => (
+                            <div key={idx} class={`flex ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div class={`max-w-lg rounded-xl p-4 space-y-2 shadow ${m.sender === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-slate-850 text-slate-100 rounded-bl-none border border-slate-750'}`}>
+                                    <div class="text-sm whitespace-pre-line leading-relaxed">{m.text}</div>
+                                    {m.citations.length > 0 && (
+                                        <div class="pt-2 border-t border-indigo-500/20 text-[10px] text-slate-400 font-medium">
+                                            <p class="font-semibold text-slate-300">Scientific Citations:</p>
+                                            <ul class="list-disc pl-4 mt-0.5 space-y-0.5">
+                                                {m.citations.map((c, cidx) => <li key={cidx}>{c}</li>)}
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                        {loading && (
+                            <div class="flex justify-start">
+                                <div class="bg-slate-850 border border-slate-750 rounded-xl rounded-bl-none p-4 shadow flex items-center gap-3">
+                                    <span class="w-2 h-2 rounded-full bg-slate-400 animate-bounce"></span>
+                                    <span class="w-2 h-2 rounded-full bg-slate-400 animate-bounce [animation-delay:0.2s]"></span>
+                                    <span class="w-2 h-2 rounded-full bg-slate-400 animate-bounce [animation-delay:0.4s]"></span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Presets */}
+                    <div class="px-6 py-2 bg-slate-950 flex flex-wrap gap-2 border-t border-slate-800">
+                        <button onClick={()=>presetQuery("What antibiotics are commonly used for MRSA?")} class="px-2.5 py-1 bg-slate-850 hover:bg-slate-800 border border-slate-700 hover:border-slate-650 rounded text-[10px] text-slate-300 transition">S. aureus antibiotics</button>
+                        <button onClick={()=>presetQuery("What recommended staining method is used for Escherichia coli?")} class="px-2.5 py-1 bg-slate-850 hover:bg-slate-800 border border-slate-700 hover:border-slate-650 rounded text-[10px] text-slate-300 transition">E. coli staining</button>
+                        <button onClick={()=>presetQuery("How to distinguish Candida albicans under microscopy?")} class="px-2.5 py-1 bg-slate-850 hover:bg-slate-800 border border-slate-700 hover:border-slate-650 rounded text-[10px] text-slate-300 transition">Candida distinction</button>
+                    </div>
+
+                    {/* Form */}
+                    <form onSubmit={handleSend} class="p-4 border-t border-slate-800 bg-slate-900 flex gap-4">
+                        <input 
+                            type="text" 
+                            class="flex-1 bg-slate-850 border border-slate-700 text-white rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                            placeholder="Type a microbiology query..."
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                        />
+                        <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-sm font-semibold text-white transition shadow-md">
+                            Send
+                        </button>
+                    </form>
+                </div>
+            );
+        }
+
+        // --- VIEW 5: DATASET MANAGEMENT ---
+        function DatasetView() {
+            const datasets = [
+                { name: "BioImage Archive", url: "https://www.ebi.ac.uk/bioimage-archive/", desc: "EBI biological imaging database containing high-res pathology and microscopy datasets." },
+                { name: "Broad Bioimage Benchmark Collection (BBBC)", url: "https://bbbc.broadinstitute.org/", desc: "Gold-standard curated benchmarker datasets representing various microorganism profiles." },
+                { name: "NIH Cell Image Library", url: "http://www.cellimagelibrary.org/", desc: "National Institutes of Health repository for cell structures, organelles, and diagnostic images." },
+                { name: "Roboflow Microbiology Datasets", url: "https://universe.roboflow.com/", desc: "Annotated custom datasets mapping bacterial, fungal, and viral microorganisms." }
+            ];
+
+            return (
+                <div class="space-y-8 max-w-4xl mx-auto">
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl">
+                        <h2 class="text-xl font-bold text-white mb-2">Connect Repository Datasets</h2>
+                        <p class="text-sm text-slate-400">Import datasets directly into your laboratory pipeline for model retraining.</p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                            {datasets.map((db, idx) => (
+                                <div key={idx} class="p-5 bg-slate-850 border border-slate-750 rounded-lg hover:border-slate-650 transition flex flex-col justify-between">
+                                    <div>
+                                        <h3 class="font-bold text-white text-sm mb-2">{db.name}</h3>
+                                        <p class="text-xs text-slate-400 leading-relaxed">{db.desc}</p>
+                                    </div>
+                                    <a href={db.url} target="_blank" class="inline-block mt-4 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition">
+                                        Browse Repository &rarr;
+                                    </a>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- VIEW 6: MODEL TRAINING ---
+        function TrainingView({ token, model, refreshModels }) {
+            const [epochs, setEpochs] = useState(10);
+            const [trainingStatus, setTrainingStatus] = useState("Idle");
+            const [progress, setProgress] = useState(0);
+            const [trainingLogs, setTrainingLogs] = useState([]);
+            const [error, setError] = useState("");
+
+            const handleTrain = async () => {
+                if (!model) return;
+                setError("");
+                setTrainingStatus("Running");
+                setProgress(0);
+                setTrainingLogs([]);
+                
+                try {
+                    const res = await fetch(`${API_BASE}/training/retrain`, {
+                        method: "POST",
+                        headers: {
+                            "Authorization": `Bearer ${token}`,
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            model_id: model.id,
+                            epochs: epochs
+                        })
+                    });
+
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.detail || "Failed to start training");
+                    }
+
+                    const data = await res.json();
+                    
+                    // Poll status
+                    const interval = setInterval(async () => {
+                        const statusRes = await fetch(`${API_BASE}/training/jobs/${data.job_id}`, {
+                            headers: { "Authorization": `Bearer ${token}` }
+                        });
+                        
+                        if (statusRes.ok) {
+                            const job = await statusRes.json();
+                            setProgress(job.progress);
+                            
+                            if (job.metrics && job.metrics.epoch) {
+                                setTrainingLogs(prev => {
+                                    // prevent duplicates
+                                    if (prev.find(l => l.epoch === job.metrics.epoch)) return prev;
+                                    return [...prev, job.metrics];
+                                });
+                            }
+
+                            if (job.status === "Completed") {
+                                setTrainingStatus("Completed");
+                                refreshModels();
+                                clearInterval(interval);
+                            } else if (job.status === "Failed") {
+                                setTrainingStatus("Failed");
+                                setError(job.message || "Training job failed");
+                                clearInterval(interval);
+                            }
+                        }
+                    }, 1500);
+
+                } catch (err) {
+                    setError(err.message);
+                    setTrainingStatus("Failed");
+                }
+            };
+
+            return (
+                <div class="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
+                    {/* Setup Trigger */}
+                    <div class="md:col-span-1 bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-xl h-fit space-y-6">
+                        <h3 class="font-bold text-white text-base">Automatic Retraining</h3>
+                        <p class="text-xs text-slate-400">Trigger fine-tuning of the YOLO detector on the newly corrected user annotations.</p>
+                        
+                        {error && (
+                            <div class="p-3 bg-red-950 border border-red-800 rounded text-red-300 text-xs text-center">
+                                {error}
+                            </div>
+                        )}
+
+                        <div class="space-y-2">
+                            <label class="block text-xs font-semibold text-slate-400">Training Epochs</label>
+                            <input 
+                                type="number" 
+                                class="w-full bg-slate-850 border border-slate-700 rounded p-2 text-sm text-white focus:outline-none" 
+                                value={epochs} 
+                                onChange={(e)=>setEpochs(parseInt(e.target.value))}
+                            />
+                        </div>
+
+                        <button 
+                            onClick={handleTrain} 
+                            disabled={trainingStatus === "Running" || !model}
+                            class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg font-semibold text-xs text-white transition shadow-md"
+                        >
+                            {trainingStatus === "Running" ? "Training active..." : "Start Retraining Pipeline"}
+                        </button>
+                    </div>
+
+                    {/* Progress / Outputs */}
+                    <div class="md:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-xl space-y-6">
+                        <h3 class="font-bold text-white text-base">Execution Logs & MLflow Metrics</h3>
+                        
+                        {trainingStatus === "Idle" && (
+                            <div class="py-12 text-center text-slate-500 text-sm">
+                                Training pipeline is currently idle. Start a job to inspect validation metrics.
+                            </div>
+                        )}
+
+                        {trainingStatus !== "Idle" && (
+                            <div class="space-y-6">
+                                {/* Progress bar */}
+                                <div>
+                                    <div class="flex justify-between text-xs font-medium text-slate-400 mb-1.5">
+                                        <span>Training status: <b class="text-indigo-400">{trainingStatus}</b></span>
+                                        <span>{progress}%</span>
+                                    </div>
+                                    <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                                        <div class="bg-indigo-500 h-full transition-all duration-300" style={{width: `${progress}%`}}></div>
+                                    </div>
+                                </div>
+
+                                {/* Table logs */}
+                                <div class="border border-slate-800 rounded-lg overflow-hidden">
+                                    <table class="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr class="bg-slate-850 text-[10px] font-semibold text-slate-400 uppercase">
+                                                <th class="py-2 px-3 text-center">Epoch</th>
+                                                <th class="py-2 px-3">Loss</th>
+                                                <th class="py-2 px-3">Accuracy</th>
+                                                <th class="py-2 px-3">mAP</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-800 text-xs">
+                                            {trainingLogs.map(log => (
+                                                <tr key={log.epoch}>
+                                                    <td class="py-2 px-3 text-center font-bold text-slate-400">{log.epoch}</td>
+                                                    <td class="py-2 px-3 font-mono text-indigo-400">{log.loss}</td>
+                                                    <td class="py-2 px-3 font-mono text-emerald-400">{(log.accuracy*100).toFixed(1)}%</td>
+                                                    <td class="py-2 px-3 font-mono text-amber-400">{(log.mAP*100).toFixed(1)}%</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // --- VIEW 7: REPORT GENERATOR ---
+        function ReportsView({ images, token }) {
+            const [selectedIds, setSelectedIds] = useState([]);
+            const [format, setFormat] = useState("PDF");
+            const [loading, setLoading] = useState(false);
+            const [reports, setReports] = useState([]);
+
+            useEffect(() => {
+                fetchReports();
+            }, []);
+
+            const fetchReports = async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/reports/`, {
+                        headers: { "Authorization": `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        setReports(data);
+                    }
+                } catch (err) {
+                    console.error(err);
+                }
+            };
+
+            const handleToggleSelect = (id) => {
+                if (selectedIds.includes(id)) {
+                    setSelectedIds(selectedIds.filter(x => x !== id));
+                } else {
+                    setSelectedIds([...selectedIds, id]);
+                }
+            };
+
+            const handleGenerate = async (e) => {
+                e.preventDefault();
+                if (selectedIds.length === 0) return;
+                
+                setLoading(true);
+                try {
+                    const res = await fetch(`${API_BASE}/reports/generate`, {
+                        method: "POST",
+                        headers: {
+                            "Authorization": `Bearer ${token}`,
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            image_ids: selectedIds,
+                            format: format
+                        })
+                    });
+
+                    if (res.ok) {
+                        fetchReports();
+                        setSelectedIds([]);
+                    }
+                } catch (err) {
+                    console.error(err);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div class="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
+                    {/* Select Form */}
+                    <div class="md:col-span-1 bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-xl h-fit space-y-6">
+                        <h3 class="font-bold text-white text-base">Export Diagnostics</h3>
+                        
+                        <div class="space-y-3">
+                            <label class="block text-xs font-semibold text-slate-400">Select Format</label>
+                            <div class="grid grid-cols-3 gap-2">
+                                {["PDF", "XLSX", "CSV"].map(f => (
+                                    <button key={f} onClick={() => setFormat(f)} type="button" class={`py-2 rounded border text-xs font-semibold ${format === f ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300'}`}>{f}</button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <button 
+                            onClick={handleGenerate}
+                            disabled={selectedIds.length === 0 || loading}
+                            class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg font-semibold text-xs text-white transition shadow-md"
+                        >
+                            {loading ? "Generating..." : `Compile Report (${selectedIds.length} Slides)`}
+                        </button>
+                    </div>
+
+                    {/* Report Archive List & Selection */}
+                    <div class="md:col-span-2 space-y-6">
+                        {/* Slide Selector */}
+                        <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-xl">
+                            <h3 class="font-bold text-white text-sm mb-4">Select Slides to Include</h3>
+                            <div class="max-h-40 overflow-y-auto space-y-2 custom-scrollbar">
+                                {images.map(img => (
+                                    <label key={img.id} class="flex items-center gap-3 p-2 bg-slate-850 hover:bg-slate-800 rounded text-xs cursor-pointer select-none">
+                                        <input type="checkbox" checked={selectedIds.includes(img.id)} onChange={()=>handleToggleSelect(img.id)} class="rounded bg-slate-800 border-slate-700 text-indigo-500 focus:ring-0" />
+                                        <span class="text-white font-medium">{img.file_name}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Archives */}
+                        <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-xl">
+                            <h3 class="font-bold text-white text-sm mb-4">Report History Archive</h3>
+                            <div class="divide-y divide-slate-800 max-h-60 overflow-y-auto custom-scrollbar">
+                                {reports.map(rep => (
+                                    <div key={rep.id} class="py-3 flex justify-between items-center text-xs">
+                                        <div>
+                                            <p class="font-semibold text-white">{rep.file_name}</p>
+                                            <p class="text-[10px] text-slate-500">{new Date(rep.created_at).toLocaleString()}</p>
+                                        </div>
+                                        <a href={`${API_BASE}/reports/${rep.id}/download`} download class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-bold text-indigo-400 rounded">
+                                            Download
+                                        </a>
+                                    </div>
+                                ))}
+                                {reports.length === 0 && (
+                                    <div class="text-center text-slate-500 py-6">
+                                        No clinical reports generated yet.
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Render React Application
+        const root = ReactDOM.createRoot(document.getElementById("root"));
+        root.render(<App />);
+    </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+venv/
+ENV/
+env/
+.env
+
+# Database
+backend/microscopy.db
+backend/microscopy.db-journal
+
+# Uploads and temporary data
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
