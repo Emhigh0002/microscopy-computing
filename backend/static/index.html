@@ -207,6 +207,7 @@
                             </div>
                             <nav class="mt-6 px-4 space-y-2">
                                 <SidebarButton label="Dashboard" tab="dashboard" active={activeTab} onClick={setActiveTab} icon="grid" />
+                                <SidebarButton label="Live Camera Feed" tab="camera" active={activeTab} onClick={setActiveTab} icon="camera" />
                                 <SidebarButton label="Upload Image" tab="upload" active={activeTab} onClick={setActiveTab} icon="upload" />
                                 <SidebarButton label="Annotation Tool" tab="annotation" active={activeTab} onClick={setActiveTab} icon="edit" />
                                 <SidebarButton label="AI Assistant" tab="assistant" active={activeTab} onClick={setActiveTab} icon="message-square" />
@@ -254,6 +255,7 @@
                         {/* VIEW PANEL */}
                         <main class="flex-1 overflow-y-auto p-8 custom-scrollbar">
                             {activeTab === "dashboard" && <DashboardView images={images} token={authToken} onOpenAnnotation={(img) => { setSelectedImage(img); setActiveTab("annotation"); }} />}
+                            {activeTab === "camera" && <CameraView token={authToken} />}
                             {activeTab === "upload" && <UploadView token={authToken} onUploadSuccess={() => { fetchImages(authToken); setActiveTab("dashboard"); }} />}
                             {activeTab === "annotation" && (
                                 <AnnotationView 
@@ -282,6 +284,7 @@
             // Inline lucide svg render equivalents
             const getIcon = () => {
                 if (icon === "grid") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>;
+                if (icon === "camera") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>;
                 if (icon === "upload") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>;
                 if (icon === "edit") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z"/></svg>;
                 if (icon === "message-square") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
@@ -1633,6 +1636,237 @@
                                     </div>
                                 )}
                             </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- VIEW 8: LIVE MICROSCOPE CAMERA ---
+        function CameraView({ token }) {
+            const [cameras, setCameras] = React.useState([]);
+            const [selectedCam, setSelectedCam] = React.useState(null);
+            const [crosshair, setCrosshair] = React.useState(true);
+            const [grid, setGrid] = React.useState(false);
+            const [ruler, setRuler] = React.useState(false);
+            const [brightness, setBrightness] = React.useState(100);
+            const [contrast, setContrast] = React.useState(100);
+            const [saturation, setSaturation] = React.useState(100);
+            const [resolution, setResolution] = React.useState("1080p");
+            const [isRecording, setIsRecording] = React.useState(false);
+            const [recordingTime, setRecordingTime] = React.useState(0);
+            const [captureLoading, setCaptureLoading] = React.useState(false);
+            const [captureMessage, setCaptureMessage] = React.useState("");
+            
+            React.useEffect(() => {
+                const getCams = async () => {
+                    try {
+                        const res = await fetch(`${API_BASE}/camera/list`, {
+                            headers: { "Authorization": `Bearer ${token}` }
+                        });
+                        if (res.ok) {
+                            const data = await res.json();
+                            setCameras(data);
+                            if (data.length > 0) setSelectedCam(data[0]);
+                        }
+                    } catch (err) {
+                        console.error(err);
+                    }
+                };
+                getCams();
+            }, [token]);
+
+            const triggerCapture = async () => {
+                if (!selectedCam) return;
+                setCaptureLoading(true);
+                setCaptureMessage("");
+                try {
+                    const res = await fetch(`${API_BASE}/camera/capture/${selectedCam.id}`, {
+                        method: "POST",
+                        headers: { "Authorization": `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        setCaptureMessage("Snapshot captured and saved as Slide ID: " + data.image_id.slice(0,8));
+                    }
+                } catch (err) {
+                    setCaptureMessage("Capture failed: " + err.message);
+                } finally {
+                    setCaptureLoading(false);
+                }
+            };
+
+            React.useEffect(() => {
+                let interval = null;
+                if (isRecording) {
+                    interval = setInterval(() => {
+                        setRecordingTime(prev => prev + 1);
+                    }, 1000);
+                } else {
+                    setRecordingTime(0);
+                }
+                return () => clearInterval(interval);
+            }, [isRecording]);
+
+            const toggleRecording = () => {
+                setIsRecording(!isRecording);
+            };
+
+            return (
+                <div class="grid grid-cols-1 lg:grid-cols-4 gap-8 h-[calc(100vh-120px)]">
+                    <div class="lg:col-span-3 flex flex-col bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
+                        <div class="px-6 py-3 border-b border-slate-800 bg-slate-900 flex justify-between items-center text-xs">
+                            <span class="text-slate-400 font-bold flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse"></span>
+                                Live Feed: {selectedCam ? selectedCam.name : "Detecting..."}
+                            </span>
+                            <span class="font-mono text-indigo-400 font-bold">24 FPS | Real-time AI Overlays Active</span>
+                        </div>
+                        
+                        <div class="flex-1 relative overflow-hidden bg-black flex items-center justify-center min-h-[500px]">
+                            {selectedCam ? (
+                                <img 
+                                    src={`${API_BASE}/camera/stream/${selectedCam.id}`}
+                                    class="absolute max-h-[500px] max-w-full z-0 object-contain"
+                                    style={{
+                                        filter: `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`
+                                    }}
+                                />
+                            ) : (
+                                <div class="text-slate-500 text-sm">Searching for connected digital microscope cameras...</div>
+                            )}
+                            
+                            {crosshair && (
+                                <div class="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
+                                    <div class="w-10 h-0.5 bg-indigo-500/50"></div>
+                                    <div class="w-0.5 h-10 bg-indigo-500/50 absolute"></div>
+                                    <div class="w-12 h-12 rounded-full border border-indigo-500/30 absolute"></div>
+                                </div>
+                            )}
+                            
+                            {grid && (
+                                <div class="absolute inset-0 pointer-events-none z-10 grid grid-cols-4 grid-rows-4 border-collapse opacity-25">
+                                    <div class="border border-slate-650"></div>
+                                    <div class="border border-slate-650"></div>
+                                    <div class="border border-slate-650"></div>
+                                    <div class="border border-slate-650"></div>
+                                    <div class="border border-slate-650"></div>
+                                    <div class="border border-slate-650"></div>
+                                    <div class="border border-slate-650"></div>
+                                    <div class="border border-slate-650"></div>
+                                    <div class="border border-slate-650"></div>
+                                    <div class="border border-slate-650"></div>
+                                    <div class="border border-slate-650"></div>
+                                    <div class="border border-slate-650"></div>
+                                </div>
+                            )}
+
+                            {ruler && (
+                                <div class="absolute bottom-6 left-6 bg-slate-900/85 border border-slate-700 px-3 py-1 rounded text-[10px] text-slate-300 font-mono flex items-center gap-2 z-10">
+                                    <div class="w-16 h-1 bg-white border-t border-b border-black"></div>
+                                    <span>5.00 µm Scale Bar</span>
+                                </div>
+                            )}
+                        </div>
+                        
+                        <div class="px-6 py-4 border-t border-slate-800 bg-slate-900 flex justify-between items-center">
+                            <div class="flex gap-4">
+                                <button 
+                                    onClick={triggerCapture}
+                                    disabled={captureLoading || !selectedCam}
+                                    class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-xs font-bold text-white rounded-lg flex items-center gap-2 shadow"
+                                >
+                                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+                                    Capture Snapshot
+                                </button>
+                                <button 
+                                    onClick={toggleRecording}
+                                    disabled={!selectedCam}
+                                    class={`px-4 py-2 border text-xs font-bold rounded-lg flex items-center gap-2 shadow transition ${isRecording ? 'bg-red-950/60 border-red-800 text-red-200 animate-pulse' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750'}`}
+                                >
+                                    <span class={`w-2.5 h-2.5 rounded-full ${isRecording ? 'bg-red-500 animate-ping' : 'bg-red-600'}`}></span>
+                                    {isRecording ? "Stop Recording (" + recordingTime + "s)" : "Record Live Video"}
+                                </button>
+                            </div>
+                            {captureMessage && (
+                                <span class="text-xs font-semibold text-emerald-400 bg-emerald-950/20 border border-emerald-900 px-3 py-1.5 rounded">
+                                    {captureMessage}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-1 space-y-6 bg-slate-900 border border-slate-800 p-6 rounded-xl overflow-y-auto custom-scrollbar shadow-xl">
+                        <div>
+                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Device Manager</h3>
+                            <label class="block text-[10px] text-slate-500 uppercase mb-2 font-bold">Select Active Microscope</label>
+                            <select 
+                                class="w-full bg-slate-850 border border-slate-700 text-white rounded p-2 text-xs font-semibold focus:outline-none"
+                                value={selectedCam ? selectedCam.id : ""}
+                                onChange={(e) => setSelectedCam(cameras.find(c => c.id === parseInt(e.target.value)))}
+                            >
+                                {cameras.map(c => (
+                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Live Overlays</h3>
+                            <div class="space-y-3 text-xs">
+                                <label class="flex items-center gap-2.5 text-slate-300 font-medium cursor-pointer">
+                                    <input type="checkbox" checked={crosshair} onChange={(e) => setCrosshair(e.target.checked)} class="rounded bg-slate-800 border-slate-700 text-indigo-500" />
+                                    Show Centroid Crosshair
+                                </label>
+                                <label class="flex items-center gap-2.5 text-slate-300 font-medium cursor-pointer">
+                                    <input type="checkbox" checked={grid} onChange={(e) => setGrid(e.target.checked)} class="rounded bg-slate-800 border-slate-700 text-indigo-500" />
+                                    Show Grid Overlay
+                                </label>
+                                <label class="flex items-center gap-2.5 text-slate-300 font-medium cursor-pointer">
+                                    <input type="checkbox" checked={ruler} onChange={(e) => setRuler(e.target.checked)} class="rounded bg-slate-800 border-slate-700 text-indigo-500" />
+                                    Show 5.0µm Scale Ruler
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="space-y-4">
+                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Image Adjustments</h3>
+                            <div class="space-y-3">
+                                <div>
+                                    <div class="flex justify-between text-[10px] text-slate-400 font-bold mb-1">
+                                        <span>Brightness</span>
+                                        <span>{brightness}%</span>
+                                    </div>
+                                    <input type="range" min="50" max="150" value={brightness} onChange={(e) => setBrightness(parseInt(e.target.value))} class="w-full accent-indigo-500" />
+                                </div>
+                                <div>
+                                    <div class="flex justify-between text-[10px] text-slate-400 font-bold mb-1">
+                                        <span>Contrast</span>
+                                        <span>{contrast}%</span>
+                                    </div>
+                                    <input type="range" min="50" max="150" value={contrast} onChange={(e) => setContrast(parseInt(e.target.value))} class="w-full accent-indigo-500" />
+                                </div>
+                                <div>
+                                    <div class="flex justify-between text-[10px] text-slate-400 font-bold mb-1">
+                                        <span>Saturation</span>
+                                        <span>{saturation}%</span>
+                                    </div>
+                                    <input type="range" min="50" max="150" value={saturation} onChange={(e) => setSaturation(parseInt(e.target.value))} class="w-full accent-indigo-500" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Stream Resolution</h3>
+                            <select 
+                                class="w-full bg-slate-850 border border-slate-700 text-white rounded p-2 text-xs font-semibold focus:outline-none"
+                                value={resolution}
+                                onChange={(e) => setResolution(e.target.value)}
+                            >
+                                <option value="720p">HD Stream (1280 x 720)</option>
+                                <option value="1080p">FHD Stream (1920 x 1080)</option>
+                                <option value="2K">2K Stream (2048 x 1536)</option>
+                            </select>
                         </div>
                     </div>
                 </div>

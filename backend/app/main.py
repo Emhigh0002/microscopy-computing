@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.core.config import settings
 from app.database import engine, Base, SessionLocal
-from app.api import auth, images, annotations, predictions, reports, assistant, training
+from app.api import auth, images, annotations, predictions, reports, assistant, training, camera
 from app.models import User, Model
 from app.core.security import get_password_hash
 
@@ -29,6 +29,7 @@ app.add_middleware(
 # Register Routers
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["Authentication"])
 app.include_router(images.router, prefix=f"{settings.API_V1_STR}/images", tags=["Microscopy Images"])
+app.include_router(camera.router, prefix=f"{settings.API_V1_STR}/camera", tags=["Digital Microscope Cameras"])
 app.include_router(annotations.router, prefix=f"{settings.API_V1_STR}/annotations", tags=["Corrections & Annotations"])
 app.include_router(predictions.router, prefix=f"{settings.API_V1_STR}/predictions", tags=["AI Predictions"])
 app.include_router(reports.router, prefix=f"{settings.API_V1_STR}/reports", tags=["Export Reporting"])
