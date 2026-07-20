@@ -95,6 +95,77 @@ def generate_mock_live_frame() -> np.ndarray:
     
     return frame
 
+class LiveMotionDetector:
+    def __init__(self):
+        self.back_sub = cv2.createBackgroundSubtractorMOG2(history=15, varThreshold=30, detectShadows=False)
+        self.tracks = {}  # id -> list of points
+        self.next_id = 0
+
+    def process_frame(self, frame: np.ndarray) -> np.ndarray:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (5, 5), 0)
+        fg_mask = self.back_sub.apply(gray)
+        _, thresh = cv2.threshold(fg_mask, 50, 255, cv2.THRESH_BINARY)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        centroids = []
+        for cnt in contours:
+            if cv2.contourArea(cnt) < 30:
+                continue
+            M = cv2.moments(cnt)
+            if M["m00"] != 0:
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
+                centroids.append((cx, cy, cv2.boundingRect(cnt)))
+                
+        new_tracks = {}
+        used_centroids = set()
+        
+        for track_id, path in self.tracks.items():
+            if not path:
+                continue
+            last_pt = path[-1]
+            min_dist = 99999
+            best_match = None
+            
+            for idx, (cx, cy, bbox) in enumerate(centroids):
+                if idx in used_centroids:
+                    continue
+                dist = math.hypot(cx - last_pt[0], cy - last_pt[1])
+                if dist < min_dist and dist < 45:
+                    min_dist = dist
+                    best_match = idx
+                    
+            if best_match is not None:
+                used_centroids.add(best_match)
+                new_path = list(path)
+                new_path.append((centroids[best_match][0], centroids[best_match][1]))
+                if len(new_path) > 12:
+                    new_path.pop(0)
+                new_tracks[track_id] = new_path
+                
+                cx, cy, (bx, by, bw, bh) = centroids[best_match]
+                cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (16, 185, 129), 1)
+                cv2.putText(frame, f"ID:{track_id} Moving", (bx, by - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (16, 185, 129), 1)
+                
+        for idx, (cx, cy, (bx, by, bw, bh)) in enumerate(centroids):
+            if idx not in used_centroids:
+                new_tracks[self.next_id] = [(cx, cy)]
+                self.next_id += 1
+                cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (14, 165, 233), 1)
+                cv2.putText(frame, "Detecting...", (bx, by - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (14, 165, 233), 1)
+                
+        self.tracks = new_tracks
+        
+        for track_id, path in self.tracks.items():
+            if len(path) >= 2:
+                for i in range(1, len(path)):
+                    cv2.line(frame, path[i-1], path[i], (16, 185, 129), 1)
+                    
+        return frame
+
 def frame_generator(camera_id: int):
     cap = cv2.VideoCapture(camera_id)
     try:
@@ -107,13 +178,14 @@ def frame_generator(camera_id: int):
                        b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
                 time.sleep(0.04) # ~25 FPS
         else:
+            motion_detector = LiveMotionDetector()
             while True:
                 ret, frame = cap.read()
                 if not ret:
-                    # Loop back or delay
                     time.sleep(0.1)
                     continue
-                # Add a simulated AI label layer on top of raw USB camera stream if desired
+                # Run real-time motion detection overlay
+                frame = motion_detector.process_frame(frame)
                 _, buffer = cv2.imencode('.jpg', frame)
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')

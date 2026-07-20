@@ -590,6 +590,14 @@
 
             const canvasRef = useRef(null);
             const imgRef = useRef(null);
+            const hiddenVideoRef = useRef(null);
+            if (!hiddenVideoRef.current) {
+                const video = document.createElement('video');
+                video.crossOrigin = "anonymous";
+                video.loop = true;
+                video.muted = true;
+                hiddenVideoRef.current = video;
+            }
 
             // Zoom & Pan state
             const [zoom, setZoom] = useState(1.0);
@@ -610,6 +618,16 @@
                 setPan({ x: 0, y: 0 });
                 setSelectedAnn(null);
                 setPolyPoints([]);
+
+                // Play/pause hidden video based on media type
+                const video = hiddenVideoRef.current;
+                if (selectedImage.media_type === 'video') {
+                    video.src = `${API_BASE}/images/${selectedImage.id}/binary`;
+                    video.play().catch(err => console.error("Error playing video:", err));
+                } else {
+                    video.pause();
+                    video.src = "";
+                }
             }, [selectedImage]);
 
             const fetchAnnotations = async () => {
@@ -681,14 +699,35 @@
                 canvas.height = 500;
 
                 if (selectedImage.media_type === 'video') {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.save();
-                    ctx.translate(pan.x, pan.y);
-                    ctx.scale(zoom, zoom);
+                    let animId;
+                    const video = hiddenVideoRef.current;
                     
-                    drawShapes(ctx);
-                    drawMotilityTracks(ctx);
-                    ctx.restore();
+                    const drawFrame = () => {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.save();
+                        ctx.translate(pan.x, pan.y);
+                        ctx.scale(zoom, zoom);
+                        
+                        ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`;
+                        try {
+                            ctx.drawImage(video, 0, 0, 600, 400);
+                        } catch (e) {
+                            // Video frame drawing might fail temporarily if not loaded
+                        }
+                        ctx.filter = 'none';
+                        
+                        drawShapes(ctx);
+                        drawMotilityTracks(ctx);
+                        ctx.restore();
+                        
+                        animId = requestAnimationFrame(drawFrame);
+                    };
+                    
+                    drawFrame();
+                    
+                    return () => {
+                        cancelAnimationFrame(animId);
+                    };
                 } else {
                     const img = new Image();
                     img.onload = () => {
@@ -716,7 +755,6 @@
                     img.src = `${API_BASE}/images/${selectedImage.id}/binary`;
                 }
             }, [selectedImage, annotations, zoom, pan, brightness, contrast, showBoxes, showSegmentation, showLabels, showXAI, explainOverlay, polyPoints, drawMode]);
-
             const drawMotilityTracks = (ctx) => {
                 if (!selectedImage || !selectedImage.motility_stats || !selectedImage.motility_stats.tracks) return;
                 
@@ -1082,19 +1120,7 @@
                                     </div>
                                 </div>
                                 <div class="flex-1 relative overflow-hidden bg-black flex items-center justify-center min-h-[500px]">
-                                    {selectedImage.media_type === 'video' && (
-                                        <video 
-                                            src={`${API_BASE}/images/${selectedImage.id}/binary`}
-                                            class="absolute max-h-[500px] max-w-full"
-                                            autoPlay
-                                            loop
-                                            muted
-                                            style={{
-                                                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                                                filter: `brightness(${brightness}%) contrast(${contrast}%)`
-                                            }}
-                                        />
-                                    )}
+
                                     <canvas 
                                         ref={canvasRef}
                                         onMouseDown={handleMouseDown}
