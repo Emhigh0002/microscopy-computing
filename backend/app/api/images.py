@@ -10,11 +10,10 @@ from app.models import Image as DBImage, User, Annotation, Prediction, AuditLog
 from app.schemas import ImageResponse, ScaleUpdateRequest
 from app.api import deps
 from app.core.config import settings
-from app.services.inference import inference_service
 import cv2
-
+import random
+from app.services.inference import inference_service
 from app.services.video import video_tracking_service
-
 router = APIRouter()
 
 @router.post("/upload", response_model=ImageResponse, status_code=status.HTTP_201_CREATED)
