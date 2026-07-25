@@ -122,13 +122,13 @@ class AssistantRequest(BaseModel):
 class AssistantResponse(BaseModel):
     response: str
     citations: List[str]
-
 # --- RETRAINING SCHEMAS ---
 class RetrainRequest(BaseModel):
     model_id: str
     epochs: Optional[int] = 10
     learning_rate: Optional[float] = 0.001
     batch_size: Optional[int] = 16
+    base_model: Optional[str] = "yolov8n.pt"
 
 class RetrainResponse(BaseModel):
     job_id: str

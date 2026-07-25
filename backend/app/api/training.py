@@ -30,7 +30,7 @@ CLASSES_LIST = [
     "Spermatozoon"
 ]
 
-def run_yolo_training(job_id: str, model_id: str, epochs: int, db_session_maker):
+def run_yolo_training(job_id: str, model_id: str, epochs: int, db_session_maker, base_model: str = "yolov8n.pt"):
     """
     Executes a real YOLO training loop using Ultralytics YOLO in a background thread.
     Saves database annotations into YOLO txt format, creates dataset.yaml,
@@ -126,7 +126,7 @@ def run_yolo_training(job_id: str, model_id: str, epochs: int, db_session_maker)
             raise RuntimeError("Ultralytics library not available for actual training.")
             
         # Initialize YOLOv8 nano model
-        model = YOLO("yolov8n.pt")
+        model = YOLO(base_model)
         
         # Training callbacks to update live API metrics
         def on_train_epoch_end_callback(trainer):
@@ -292,7 +292,8 @@ def trigger_retraining(
         job_id,
         payload.model_id,
         payload.epochs,
-        SessionLocal
+        SessionLocal,
+        payload.base_model
     )
     
     db.add(AuditLog(
@@ -326,3 +327,47 @@ def get_models(
     current_user: User = Depends(deps.get_current_active_user)
 ):
     return db.query(Model).order_by(Model.created_at.desc()).all()
+
+
+@router.post("/activate/{model_id}", response_model=ModelResponse)
+def set_active_model(
+    model_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(deps.get_current_active_user)
+):
+    """
+    Switches the active inference model to the selected model ID.
+    """
+    model = db.query(Model).filter(Model.id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+        
+    # Archive all other models
+    active_models = db.query(Model).filter(Model.status == "active").all()
+    for m in active_models:
+        m.status = "archived"
+        
+    # Activate selected model
+    model.status = "active"
+    db.commit()
+    db.refresh(model)
+    
+    # Reload model weights in inference service
+    if model.file_path and os.path.exists(model.file_path):
+        inference_service.load_yolo_model(model.file_path)
+    else:
+        # If it's the base model, it will fall back to base loading
+        inference_service.load_yolo_model(None)
+        
+    # Add audit log
+    db.add(AuditLog(
+        user_id=current_user.id,
+        action="set_active_model",
+        details={"model_id": model_id, "name": model.name, "version": model.version}
+    ))
+    db.commit()
+    
+    return model
