@@ -42,7 +42,7 @@ def init_simulated_cells():
             "size": random.randint(10, 20)
         })
 
-def generate_mock_live_frame() -> np.ndarray:
+def generate_mock_live_frame(draw_annotations: bool = True) -> np.ndarray:
     global simulated_cells
     if not simulated_cells:
         init_simulated_cells()
@@ -83,11 +83,12 @@ def generate_mock_live_frame() -> np.ndarray:
         else:
             cv2.circle(frame, (x, y), size // 2, color, -1)
             
-        # Draw bounding boxes and labels
-        bx, by = x - size - 2, y - size - 2
-        bw, bh = size * 2 + 4, size * 2 + 4
-        cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), color, 1)
-        cv2.putText(frame, f"{cell['name']} 95%", (bx, by - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1)
+        if draw_annotations:
+            # Draw bounding boxes and labels
+            bx, by = x - size - 2, y - size - 2
+            bw, bh = size * 2 + 4, size * 2 + 4
+            cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), color, 1)
+            cv2.putText(frame, f"{cell['name']} 95%", (bx, by - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1)
         
     # Crosshair
     cv2.line(frame, (300, 185), (300, 215), (75, 80, 90), 1)
@@ -171,14 +172,14 @@ def frame_generator(camera_id: int):
     try:
         if not cap.isOpened():
             # Stream simulated live microscope view
+            motion_detector = LiveMotionDetector()
             while True:
-                frame = generate_mock_live_frame()
+                frame = generate_mock_live_frame(draw_annotations=False)
+                frame = motion_detector.process_frame(frame)
                 _, buffer = cv2.imencode('.jpg', frame)
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
                 time.sleep(0.04) # ~25 FPS
-        else:
-            motion_detector = LiveMotionDetector()
             while True:
                 ret, frame = cap.read()
                 if not ret:
