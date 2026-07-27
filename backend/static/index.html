@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Microscopy AI Platform - microorganism detection, count, & measurements</title>
+    <!-- Outfit & JetBrains Mono Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     
     <!-- React & ReactDOM (UMD) -->
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
@@ -18,6 +20,10 @@
             darkMode: 'class',
             theme: {
                 extend: {
+                    fontFamily: {
+                        sans: ['Outfit', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
                     colors: {
                         brand: {
                             50: '#eef2ff',
@@ -40,19 +46,61 @@
     
     <!-- Custom styling overrides -->
     <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+        }
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
         .custom-scrollbar::-webkit-scrollbar {
             width: 6px;
             height: 6px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
-            background: #0b0f19;
+            background: #090d16;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
             background: #1e293b;
             border-radius: 3px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #334155;
+            background: #4f46e5;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(16px) saturate(120%);
+            -webkit-backdrop-filter: blur(16px) saturate(120%);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .glow-indigo {
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.15);
+        }
+        .glow-emerald {
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
+        }
+        .glow-amber {
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
+        }
+        .premium-bg-gradient {
+            background: radial-gradient(circle at top right, rgba(99, 102, 241, 0.08), transparent 40%),
+                        radial-gradient(circle at bottom left, rgba(79, 70, 229, 0.05), transparent 50%),
+                        #090d16;
+        }
+        .sidebar-btn-active {
+            background: linear-gradient(135deg, #4f46e5 0%, #312e81 100%);
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+        }
+        .card-glow-hover:hover {
+            border-color: rgba(99, 102, 241, 0.4);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 0 15px rgba(99, 102, 241, 0.1);
+        }
+        .pulse-border {
+            animation: pulse-border-anim 2s infinite alternate;
+        }
+        @keyframes pulse-border-anim {
+            0% { border-color: rgba(99, 102, 241, 0.2); }
+            100% { border-color: rgba(99, 102, 241, 0.6); }
         }
     </style>
 </head>
@@ -152,8 +200,12 @@
             if (!authToken) {
                 // RENDER LOGIN SCREEN
                 return (
-                    <div class="flex min-h-full items-center justify-center px-4 py-12 sm:px-6 lg:px-8 bg-slate-950">
-                        <div class="w-full max-w-md space-y-8 p-8 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl">
+                    <div class="flex min-h-full items-center justify-center px-4 py-12 sm:px-6 lg:px-8 bg-[#090d16] relative overflow-hidden">
+                        {/* Glow Blobs */}
+                        <div class="absolute -top-40 -left-40 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl"></div>
+                        <div class="absolute -bottom-40 -right-40 w-96 h-96 bg-violet-600/10 rounded-full blur-3xl"></div>
+                        
+                        <div class="w-full max-w-md space-y-8 p-8 bg-slate-950/50 backdrop-blur-xl border border-slate-850/80 rounded-2xl shadow-2xl relative z-10 glow-indigo">
                             <div>
                                 <div class="flex justify-center text-indigo-500">
                                     <svg class="h-12 w-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -194,9 +246,9 @@
             }
 
             return (
-                <div class="h-full flex overflow-hidden bg-slate-950">
+                <div class="h-full flex overflow-hidden premium-bg-gradient">
                     {/* SIDEBAR */}
-                    <aside class="w-64 flex-shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col justify-between">
+                    <aside class="w-64 flex-shrink-0 bg-slate-950/80 border-r border-slate-900 backdrop-blur-lg flex flex-col justify-between">
                         <div>
                             <div class="h-16 flex items-center px-6 gap-3 border-b border-slate-800">
                                 <svg class="h-8 w-8 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -294,7 +346,7 @@
             };
 
             return (
-                <button onClick={() => onClick(tab)} class={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition ${isActive ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'}`}>
+                <button onClick={() => onClick(tab)} class={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${isActive ? 'sidebar-btn-active text-white font-semibold' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900/60 hover:translate-x-1'}`}>
                     {getIcon()}
                     {label}
                 </button>
@@ -432,7 +484,7 @@
 
         function StatCard({ title, value, icon, color }) {
             return (
-                <div class={`p-6 rounded-xl border bg-slate-900 shadow-md ${color.split(' ')[2]}`}>
+                <div class={`p-6 rounded-xl border bg-slate-900/50 backdrop-blur-md shadow-lg transition-all duration-300 card-glow-hover ${color.split(' ')[2]}`}>
                     <div class="flex justify-between items-center">
                         <span class="text-sm font-semibold text-slate-400 uppercase tracking-wider">{title}</span>
                         <span class={`p-2 rounded-lg ${color.split(' ')[0]} ${color.split(' ')[1]}`}>
