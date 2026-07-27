@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -104,7 +104,7 @@
         }
     </style>
 </head>
-<body class="h-full overflow-hidden font-sans antialiased custom-scrollbar">
+<body class="h-full overflow-hidden font-sans antialiased custom-scrollbar bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-200">
     <div id="root" class="h-full"></div>
 
     <!-- MAIN REACT APPLICATION -->
@@ -114,6 +114,22 @@
         const API_BASE = "/api/v1";
 
         function App() {
+            // Theme state
+            const [theme, setTheme] = useState(() => {
+                const local = localStorage.getItem('microscopy-theme');
+                if (local) return local;
+                return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            });
+
+            useEffect(() => {
+                localStorage.setItem('microscopy-theme', theme);
+                if (theme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+            }, [theme]);
+
             // Navigation state
             const [activeTab, setActiveTab] = useState("dashboard");
             
@@ -248,14 +264,14 @@
             return (
                 <div class="h-full flex overflow-hidden premium-bg-gradient">
                     {/* SIDEBAR */}
-                    <aside class="w-64 flex-shrink-0 bg-slate-950/80 border-r border-slate-900 backdrop-blur-lg flex flex-col justify-between">
+                    <aside class="w-64 flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between transition-colors duration-200">
                         <div>
-                            <div class="h-16 flex items-center px-6 gap-3 border-b border-slate-800">
+                            <div class="h-16 flex items-center px-6 gap-3 border-b border-slate-200 dark:border-slate-800">
                                 <svg class="h-8 w-8 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                     <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
                                     <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
                                 </svg>
-                                <span class="font-bold text-lg text-white tracking-wide">Microscopy AI</span>
+                                <span class="font-bold text-lg text-slate-900 dark:text-white tracking-wide">Microscopy AI</span>
                             </div>
                             <nav class="mt-6 px-4 space-y-2">
                                 <SidebarButton label="Dashboard" tab="dashboard" active={activeTab} onClick={setActiveTab} icon="grid" />
@@ -268,15 +284,15 @@
                                 <SidebarButton label="Export Reports" tab="reports" active={activeTab} onClick={setActiveTab} icon="file-text" />
                             </nav>
                         </div>
-                        <div class="p-4 border-t border-slate-800 flex items-center gap-3">
-                            <div class="w-8 h-8 rounded-full bg-indigo-900 border border-indigo-700 flex items-center justify-center font-bold text-xs text-indigo-300">
+                        <div class="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center gap-3 transition-colors duration-200">
+                            <div class="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 dark:bg-slate-800 dark:border-slate-700 flex items-center justify-center font-bold text-xs text-blue-600 dark:text-blue-400">
                                 {userName.split(' ').map(n=>n[0]).join('')}
                             </div>
                             <div class="min-w-0 flex-1">
-                                <p class="text-xs font-semibold text-white truncate">{userName}</p>
-                                <p class="text-[10px] text-slate-400 font-medium truncate">{userRole}</p>
+                                <p class="text-xs font-bold text-slate-850 dark:text-white truncate">{userName}</p>
+                                <p class="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate">{userRole}</p>
                             </div>
-                            <button onClick={() => setAuthToken(null)} class="text-slate-400 hover:text-white transition">
+                            <button onClick={() => setAuthToken(null)} class="text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition" title="Sign Out">
                                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
                             </button>
                         </div>
@@ -285,22 +301,29 @@
                     {/* MAIN CONTAINER */}
                     <div class="flex-1 flex flex-col overflow-hidden">
                         {/* TOPBAR */}
-                        <header class="h-16 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-8 z-10">
+                        <header class="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-8 z-10 transition-colors duration-200">
                             <div>
-                                <h1 class="text-lg font-bold text-white tracking-wide">
+                                <h1 class="text-lg font-bold text-slate-800 dark:text-white tracking-tight">
                                     {activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace('-', ' ')}
                                 </h1>
                             </div>
                             <div class="flex items-center gap-4">
                                 {activeModel && (
-                                    <div class="flex items-center gap-2 px-3 py-1 bg-slate-800 border border-slate-700 rounded-full text-xs font-medium text-slate-300">
+                                    <div class="flex items-center gap-2 px-3 py-1 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-full text-xs font-semibold text-slate-600 dark:text-slate-300">
                                         <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                                        Model: <span class="text-indigo-400 font-semibold">{activeModel.name} [{activeModel.version}]</span>
+                                        Active Model: <span class="text-blue-600 dark:text-blue-400 font-bold">{activeModel.name} [{activeModel.version}]</span>
                                     </div>
                                 )}
-                                <div class="text-xs text-slate-400 font-medium">
-                                    System Mode: <span class="text-emerald-400 font-semibold">Active Inference</span>
+                                <div class="text-xs text-slate-500 dark:text-slate-400 font-bold">
+                                    Status: <span class="text-emerald-600 dark:text-emerald-400">Active Inference</span>
                                 </div>
+                                <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} class="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition" title="Toggle Light/Dark Mode">
+                                    {theme === 'dark' ? (
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                                    ) : (
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                                    )}
+                                </button>
                             </div>
                         </header>
 
@@ -390,16 +413,22 @@
                 const keys = Object.keys(speciesData);
                 const values = Object.values(speciesData);
                 
+                const isDark = theme === 'dark';
+                const textColor = isDark ? '#94a3b8' : '#475569';
+                const gridColor = isDark ? 'rgba(51, 65, 85, 0.4)' : 'rgba(226, 232, 240, 0.7)';
+                
                 // Bar Chart
                 Plotly.newPlot('bar-chart', [{
                     x: keys,
                     y: values,
                     type: 'bar',
-                    marker: { color: '#6366f1' }
+                    marker: { color: isDark ? '#3b82f6' : '#2563eb' }
                 }], {
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
-                    font: { color: '#94a3b8' },
+                    font: { color: textColor, family: 'Outfit, sans-serif' },
+                    xaxis: { gridcolor: gridColor, tickfont: { size: 10 } },
+                    yaxis: { gridcolor: gridColor, tickfont: { size: 10 } },
                     margin: { t: 20, l: 40, r: 20, b: 40 },
                     height: 250
                 }, {displayModeBar: false});
@@ -409,16 +438,16 @@
                     labels: keys,
                     values: values,
                     type: 'pie',
-                    marker: { colors: ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#3b82f6'] }
+                    marker: { colors: ['#2563eb', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'] }
                 }], {
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
-                    font: { color: '#94a3b8' },
+                    font: { color: textColor, family: 'Outfit, sans-serif' },
                     margin: { t: 20, l: 20, r: 20, b: 20 },
                     height: 250
                 }, {displayModeBar: false});
 
-            }, [speciesData]);
+            }, [speciesData, theme]);
 
             const totalDetections = Object.values(speciesData).reduce((a, b) => a + b, 0);
 
@@ -435,44 +464,44 @@
                     {/* Charts */}
                     {Object.keys(speciesData).length > 0 && (
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            <div class="p-6 bg-slate-900 border border-slate-800 rounded-xl">
-                                <h3 class="text-sm font-semibold text-slate-400 mb-4 uppercase tracking-wider">Counts by Species</h3>
+                            <div class="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm transition-colors duration-200">
+                                <h3 class="text-xs font-bold text-slate-500 dark:text-slate-400 mb-4 uppercase tracking-widest">Counts by Species</h3>
                                 <div id="bar-chart"></div>
                             </div>
-                            <div class="p-6 bg-slate-900 border border-slate-800 rounded-xl">
-                                <h3 class="text-sm font-semibold text-slate-400 mb-4 uppercase tracking-wider">Species Distribution</h3>
+                            <div class="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm transition-colors duration-200">
+                                <h3 class="text-xs font-bold text-slate-500 dark:text-slate-400 mb-4 uppercase tracking-widest">Species Distribution</h3>
                                 <div id="pie-chart"></div>
                             </div>
                         </div>
                     )}
 
                     {/* Image List */}
-                    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
-                        <div class="px-6 py-4 border-b border-slate-800 flex justify-between items-center">
-                            <h3 class="font-bold text-white">Microscope Slides Queue</h3>
+                    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm transition-colors duration-200">
+                        <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
+                            <h3 class="font-bold text-slate-900 dark:text-white text-sm tracking-tight">Microscope Slides Ingestion Queue</h3>
                         </div>
-                        <div class="divide-y divide-slate-800">
+                        <div class="divide-y divide-slate-200 dark:divide-slate-800">
                             {images.map(img => (
-                                <div key={img.id} class="px-6 py-4 flex items-center justify-between hover:bg-slate-850/50 transition">
+                                <div key={img.id} class="px-6 py-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-850/20 transition">
                                     <div class="flex items-center gap-4">
-                                        <img src={`${API_BASE}/images/${img.id}/binary`} class="w-12 h-12 object-cover rounded bg-black border border-slate-700" />
+                                        <img src={`${API_BASE}/images/${img.id}/binary`} class="w-12 h-12 object-cover rounded-xl bg-black border border-slate-200 dark:border-slate-700" />
                                         <div>
-                                            <p class="text-sm font-semibold text-white">{img.file_name}</p>
-                                            <p class="text-xs text-slate-400">Dimensions: {img.width}x{img.height} px | Scale: {img.scale_microns_px} µm/pixel</p>
+                                            <p class="text-sm font-bold text-slate-800 dark:text-white">{img.file_name}</p>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Dimensions: {img.width}×{img.height} px | Scale: <span class="text-blue-600 dark:text-blue-400 font-semibold">{img.scale_microns_px} µm/pixel</span></p>
                                         </div>
                                     </div>
                                     <div class="flex items-center gap-4">
-                                        <span class={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${img.status === 'Annotated' ? 'bg-indigo-950 text-indigo-300 border border-indigo-900' : 'bg-slate-800 text-slate-300 border border-slate-700'}`}>
+                                        <span class={`px-3 py-1 rounded-full text-xs font-bold ${img.status === 'Annotated' ? 'bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-900/50' : 'bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'}`}>
                                             {img.status}
                                         </span>
-                                        <button onClick={() => onOpenAnnotation(img)} class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-650 text-xs font-semibold rounded text-indigo-400 transition">
+                                        <button onClick={() => onOpenAnnotation(img)} class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-xs font-bold rounded-xl text-white transition shadow-sm">
                                             Open Viewer
                                         </button>
                                     </div>
                                 </div>
                             ))}
                             {images.length === 0 && (
-                                <div class="px-6 py-12 text-center text-slate-500 text-sm">
+                                <div class="px-6 py-12 text-center text-slate-500 dark:text-slate-400 text-sm">
                                     No microscopy images loaded. Click "Upload Image" to get started.
                                 </div>
                             )}
@@ -483,18 +512,19 @@
         }
 
         function StatCard({ title, value, icon, color }) {
+            const glowClass = color.includes('indigo') ? 'border-blue-500 dark:border-blue-500' : color.includes('emerald') ? 'border-emerald-500 dark:border-emerald-500' : color.includes('amber') ? 'border-amber-500 dark:border-amber-500' : 'border-blue-500 dark:border-blue-500';
             return (
-                <div class={`p-6 rounded-xl border bg-slate-900/50 backdrop-blur-md shadow-lg transition-all duration-300 card-glow-hover ${color.split(' ')[2]}`}>
+                <div class={`p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm hover:shadow transition-all duration-200 border-l-4 ${glowClass}`}>
                     <div class="flex justify-between items-center">
-                        <span class="text-sm font-semibold text-slate-400 uppercase tracking-wider">{title}</span>
-                        <span class={`p-2 rounded-lg ${color.split(' ')[0]} ${color.split(' ')[1]}`}>
-                            {icon === "file" && <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>}
-                            {icon === "activity" && <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>}
-                            {icon === "box" && <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>}
-                            {icon === "percent" && <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="5" x2="5" y2="19"></line><circle cx="6.5" cy="6.5" r="2.5"></circle><circle cx="17.5" cy="17.5" r="2.5"></circle></svg>}
+                        <span class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{title}</span>
+                        <span class={`p-2 rounded-xl bg-slate-50 dark:bg-slate-800/85 text-blue-600 dark:text-blue-400`}>
+                            {icon === "file" && <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>}
+                            {icon === "activity" && <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>}
+                            {icon === "box" && <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>}
+                            {icon === "percent" && <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="19" y1="5" x2="5" y2="19"></line><circle cx="6.5" cy="6.5" r="2.5"></circle><circle cx="17.5" cy="17.5" r="2.5"></circle></svg>}
                         </span>
                     </div>
-                    <p class="mt-4 text-3xl font-extrabold text-white tracking-tight">{value}</p>
+                    <p class="mt-4 text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">{value}</p>
                 </div>
             );
         }
