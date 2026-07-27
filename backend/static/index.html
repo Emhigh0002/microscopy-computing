@@ -329,7 +329,7 @@
 
                         {/* VIEW PANEL */}
                         <main class="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                            {activeTab === "dashboard" && <DashboardView images={images} token={authToken} onOpenAnnotation={(img) => { setSelectedImage(img); setActiveTab("annotation"); }} />}
+                            {activeTab === "dashboard" && <DashboardView images={images} token={authToken} onOpenAnnotation={(img) => { setSelectedImage(img); setActiveTab("annotation"); }} theme={theme} />}
                             {activeTab === "camera" && <CameraView token={authToken} />}
                             {activeTab === "upload" && <UploadView token={authToken} onUploadSuccess={() => { fetchImages(authToken); setActiveTab("dashboard"); }} />}
                             {activeTab === "annotation" && (
@@ -377,7 +377,7 @@
         }
 
         // --- VIEW 1: DASHBOARD ---
-        function DashboardView({ images, token, onOpenAnnotation }) {
+        function DashboardView({ images, token, onOpenAnnotation, theme }) {
             const [speciesData, setSpeciesData] = useState({});
             
             // Build analytics from current images
