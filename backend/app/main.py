@@ -13,6 +13,15 @@ from app.core.security import get_password_hash
 # Create tables
 Base.metadata.create_all(bind=engine)
 
+# Dynamic SQLite migrations for session_id column in clip_exports
+try:
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE clip_exports ADD COLUMN session_id VARCHAR;"))
+except Exception:
+    pass
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
@@ -37,7 +46,7 @@ app.include_router(reports.router, prefix=f"{settings.API_V1_STR}/reports", tags
 app.include_router(assistant.router, prefix=f"{settings.API_V1_STR}/assistant", tags=["AI Clinical Assistant"])
 app.include_router(training.router, prefix=f"{settings.API_V1_STR}/training", tags=["Model Retraining"])
 app.include_router(clips.router, prefix=f"{settings.API_V1_STR}/clips", tags=["Video Clip Exports"])
-app.include_router(sessions.router, prefix=f"{settings.API_V1_STR}/sessions", tags=["Live Detection Sessions"])
+app.include_router(sessions.router, prefix=f"{settings.API_V1_STR}/video/sessions", tags=["Live Detection Sessions"])
 
 
 @app.on_event("startup")

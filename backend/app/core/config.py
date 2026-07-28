@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     CLIPS_DIR: str = os.getenv("CLIPS_DIR", "data/clips")
     
     # Create directories if they do not exist
+    # Target Microorganism Classes
+    TARGET_CLASSES: list = [
+        {"name": "Escherichia coli", "type": "bacterium", "avg_size_microns": 2.0},
+        {"name": "Staphylococcus aureus", "type": "bacterium", "avg_size_microns": 1.0},
+        {"name": "Bacillus subtilis", "type": "bacterium", "avg_size_microns": 3.0},
+        {"name": "Candida albicans", "type": "yeast", "avg_size_microns": 5.0},
+        {"name": "Aspergillus niger", "type": "mold", "avg_size_microns": 12.0},
+        {"name": "Spermatozoon", "type": "cell", "avg_size_microns": 4.5}
+    ]
+
     model_config = ConfigDict(case_sensitive=True)
 
 settings = Settings()

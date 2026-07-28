@@ -282,6 +282,7 @@
                                 <SidebarButton label="Dataset Management" tab="dataset" active={activeTab} onClick={setActiveTab} icon="database" />
                                 <SidebarButton label="Model Training" tab="training" active={activeTab} onClick={setActiveTab} icon="cpu" />
                                 <SidebarButton label="Export Reports" tab="reports" active={activeTab} onClick={setActiveTab} icon="file-text" />
+                                <SidebarButton label="Session History" tab="history" active={activeTab} onClick={setActiveTab} icon="history" />
                             </nav>
                         </div>
                         <div class="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center gap-3 transition-colors duration-200">
@@ -344,6 +345,7 @@
                             {activeTab === "dataset" && <DatasetView />}
                             {activeTab === "training" && <TrainingView token={authToken} model={activeModel} refreshModels={() => fetchActiveModels(authToken)} />}
                             {activeTab === "reports" && <ReportsView images={images} token={authToken} />}
+                            {activeTab === "history" && <SessionHistoryView token={authToken} onOpenAnnotation={(img) => { setSelectedImage(img); setActiveTab("annotation"); }} />}
                         </main>
                     </div>
                 </div>
@@ -362,6 +364,7 @@
                 if (icon === "camera") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>;
                 if (icon === "upload") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>;
                 if (icon === "edit") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z"/></svg>;
+                if (icon === "history") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3m6-3a9 9 0 1 1-9-9 9 9 0 0 1 9 9Z"/></svg>;
                 if (icon === "message-square") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
                 if (icon === "database") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>;
                 if (icon === "cpu") return <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"></rect><rect x="9" y="9" width="6" height="6"></rect><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3"/></svg>;
@@ -373,6 +376,320 @@
                     {getIcon()}
                     {label}
                 </button>
+            );
+        }
+
+        // --- VIEW: SESSION HISTORY ---
+        function SessionHistoryView({ token, onOpenAnnotation }) {
+            const [sessions, setSessions] = React.useState([]);
+            const [selectedSession, setSelectedSession] = React.useState(null);
+            const [frames, setFrames] = React.useState([]);
+            const [loading, setLoading] = React.useState(false);
+            const [detailsLoading, setDetailsLoading] = React.useState(false);
+            const [exportingClip, setExportingClip] = React.useState(false);
+            const [clipProgress, setClipProgress] = React.useState(0);
+            const [clipUrl, setClipUrl] = React.useState(null);
+            const [importMessage, setImportMessage] = React.useState("");
+
+            const fetchSessions = async () => {
+                setLoading(true);
+                try {
+                    const res = await fetch(`${API_BASE}/video/sessions`, {
+                        headers: { "Authorization": `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        setSessions(data);
+                    }
+                } catch (err) {
+                    console.error("Error fetching sessions:", err);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            React.useEffect(() => {
+                fetchSessions();
+            }, [token]);
+
+            const viewSessionDetails = async (session) => {
+                setSelectedSession(session);
+                setDetailsLoading(true);
+                setFrames([]);
+                setImportMessage("");
+                setClipUrl(null);
+                setExportingClip(false);
+                try {
+                    const res = await fetch(`${API_BASE}/video/sessions/${session.id}/frames`, {
+                        headers: { "Authorization": `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        setFrames(data);
+                    }
+                } catch (err) {
+                    console.error("Error fetching frames:", err);
+                } finally {
+                    setDetailsLoading(false);
+                }
+            };
+
+            const triggerSessionClip = async (sessionId) => {
+                setExportingClip(true);
+                setClipProgress(0);
+                setClipUrl(null);
+
+                const pollClip = async () => {
+                    try {
+                        const res = await fetch(`${API_BASE}/video/sessions/${sessionId}/clip`, {
+                            headers: { "Authorization": `Bearer ${token}` }
+                        });
+                        if (res.ok) {
+                            const data = await res.json();
+                            setClipProgress(data.progress);
+                            if (data.status === "completed") {
+                                setClipUrl(`${API_BASE}/clips/${data.id}/download`);
+                                setExportingClip(false);
+                            } else if (data.status === "failed") {
+                                setExportingClip(false);
+                            } else {
+                                setTimeout(pollClip, 1000);
+                            }
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        setExportingClip(false);
+                    }
+                };
+
+                pollClip();
+            };
+
+            const importFrameToPipeline = async (frameId) => {
+                setImportMessage("");
+                try {
+                    const res = await fetch(`${API_BASE}/video/sessions/frame/${frameId}/to-image`, {
+                        method: "POST",
+                        headers: { "Authorization": `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        setImportMessage("Successfully imported frame snapshot! Loading in Annotation view...");
+                        
+                        // Wait briefly then open
+                        setTimeout(async () => {
+                            // Fetch images so parent app refreshes list
+                            const imgRes = await fetch(`${API_BASE}/images/${data.image_id}`, {
+                                headers: { "Authorization": `Bearer ${token}` }
+                            });
+                            if (imgRes.ok) {
+                                const imgData = await imgRes.json();
+                                onOpenAnnotation(imgData);
+                            }
+                        }, 1200);
+                    } else {
+                        const err = await res.json();
+                        setImportMessage("Import failed: " + (err.detail || "Database mismatch"));
+                    }
+                } catch (err) {
+                    setImportMessage("Import failed: " + err.message);
+                }
+            };
+
+            return (
+                <div class="space-y-8">
+                    {selectedSession ? (
+                        <div class="space-y-6">
+                            {/* Drilldown Details Header */}
+                            <div class="flex items-center justify-between">
+                                <button 
+                                    onClick={() => setSelectedSession(null)}
+                                    class="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-bold rounded-xl text-slate-750 dark:text-slate-200 transition flex items-center gap-2"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                                    Back to Session List
+                                </button>
+                                <div class="flex gap-3">
+                                    <a 
+                                        href={`${API_BASE}/video/sessions/${selectedSession.id}/export?format=csv`}
+                                        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-xs font-bold text-white rounded-xl transition shadow-sm"
+                                    >
+                                        Export CSV Log
+                                    </a>
+                                    <a 
+                                        href={`${API_BASE}/video/sessions/${selectedSession.id}/export?format=json`}
+                                        class="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-bold text-slate-750 dark:text-slate-200 rounded-xl transition"
+                                    >
+                                        Export JSON Log
+                                    </a>
+                                    <button 
+                                        onClick={() => triggerSessionClip(selectedSession.id)}
+                                        disabled={exportingClip}
+                                        class="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-xs font-bold text-white rounded-xl transition shadow-sm"
+                                    >
+                                        {exportingClip ? `Generating HD Clip (${clipProgress}%)...` : "Compile HD Video Clip"}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {clipUrl && (
+                                <div class="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/50 rounded-2xl flex justify-between items-center animate-pulse">
+                                    <span class="text-xs font-bold text-emerald-800 dark:text-emerald-300">HD Video clip compiled successfully!</span>
+                                    <a href={clipUrl} download class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white rounded-xl transition">
+                                        Download Clip (.mp4)
+                                    </a>
+                                </div>
+                            )}
+
+                            {importMessage && (
+                                <div class="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/50 rounded-2xl text-xs font-bold text-blue-800 dark:text-blue-300">
+                                    {importMessage}
+                                </div>
+                            )}
+
+                            {/* Session Info Grid */}
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                                <div class="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
+                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Operator Name</p>
+                                    <p class="mt-2 text-base font-bold text-slate-800 dark:text-white">Pathologist / AI System</p>
+                                </div>
+                                <div class="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
+                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Achieved Inference FPS</p>
+                                    <p class="mt-2 text-base font-bold text-blue-600 dark:text-blue-400 font-mono">{selectedSession.achieved_inference_fps || "0.0"} FPS</p>
+                                </div>
+                                <div class="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
+                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Average Confidence</p>
+                                    <p class="mt-2 text-base font-bold text-slate-800 dark:text-white font-mono">{(selectedSession.avg_confidence * 100).toFixed(0)}%</p>
+                                </div>
+                                <div class="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
+                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Detections Logged</p>
+                                    <p class="mt-2 text-base font-bold text-slate-800 dark:text-white font-mono">{selectedSession.total_detections}</p>
+                                </div>
+                            </div>
+
+                            {/* Class Counts Summary */}
+                            <div class="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
+                                <h3 class="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-4">Organisms Distribution</h3>
+                                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                    {Object.entries(selectedSession.class_counts || {}).map(([cls, val]) => (
+                                        <div key={cls} class="p-3 bg-slate-50 dark:bg-slate-850 rounded-xl flex flex-col justify-between border border-slate-100 dark:border-slate-800">
+                                            <span class="text-xs font-semibold text-slate-600 dark:text-slate-300 truncate">{cls}</span>
+                                            <span class="mt-2 text-lg font-black text-slate-800 dark:text-white font-mono">{val}</span>
+                                        </div>
+                                    ))}
+                                    {Object.keys(selectedSession.class_counts || {}).length === 0 && (
+                                        <div class="col-span-full py-4 text-center text-xs text-slate-500">No detections registered.</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Logged Frames list */}
+                            <div class="space-y-4">
+                                <h3 class="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Logged Frames & Snapshots</h3>
+                                {detailsLoading ? (
+                                    <div class="text-center py-12 text-slate-500">Loading frame logs...</div>
+                                ) : (
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {frames.map((frame, index) => (
+                                            <div key={frame.id} class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm flex flex-col md:flex-row">
+                                                <div class="w-full md:w-1/3 relative bg-black flex items-center justify-center min-h-[140px]">
+                                                    {frame.frame_path ? (
+                                                        <img src={`data:image/jpeg;base64,...`} class="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <div class="text-[10px] text-slate-500 font-bold uppercase">No Image</div>
+                                                    )}
+                                                    <div class="absolute top-2 left-2 bg-slate-900/80 px-2 py-0.5 rounded text-[8px] font-mono text-white">
+                                                        TC: {index * 1.0}s
+                                                    </div>
+                                                </div>
+                                                <div class="flex-1 p-5 flex flex-col justify-between">
+                                                    <div>
+                                                        <p class="text-xs font-bold text-slate-800 dark:text-white">Snapshot ID: {frame.id.slice(0,8)}</p>
+                                                        <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Detections count: <span class="font-mono font-bold text-blue-600 dark:text-blue-400">{frame.detections.length}</span></p>
+                                                        <div class="mt-2 flex flex-wrap gap-1">
+                                                            {frame.detections.slice(0, 3).map((d, i) => (
+                                                                <span key={i} class="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-[8px] font-bold text-slate-700 dark:text-slate-300 rounded">
+                                                                    {d.class}
+                                                                </span>
+                                                            ))}
+                                                            {frame.detections.length > 3 && (
+                                                                <span class="text-[8px] text-slate-400 font-bold">+{frame.detections.length - 3} more</span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div class="mt-4">
+                                                        <button 
+                                                            onClick={() => importFrameToPipeline(frame.id)}
+                                                            class="w-full py-2 bg-blue-50 hover:bg-blue-100 dark:bg-slate-800 dark:hover:bg-slate-750 text-[10px] font-bold rounded-xl text-blue-600 dark:text-blue-400 transition"
+                                                        >
+                                                            Send to Annotation Tool
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {frames.length === 0 && (
+                                            <div class="col-span-full py-8 text-center text-xs text-slate-400 bg-slate-50 dark:bg-slate-950 rounded-2xl italic">
+                                                No specific frame snapshots logged for this session. (Only frames containing detections at the throttled interval are stored).
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ) : (
+                        <div class="space-y-6">
+                            {/* Session List Table */}
+                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm transition-colors duration-200">
+                                <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
+                                    <h3 class="font-bold text-slate-900 dark:text-white text-sm tracking-tight">Digital Microscope Live Inference Log</h3>
+                                    <button onClick={fetchSessions} class="p-2 bg-slate-50 hover:bg-slate-100 dark:bg-slate-850 dark:hover:bg-slate-800 rounded-xl transition">
+                                        <svg class="w-4 h-4 text-slate-600 dark:text-slate-300" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 1 1 21.2 8H17"/></svg>
+                                    </button>
+                                </div>
+                                <div class="divide-y divide-slate-200 dark:divide-slate-800">
+                                    {sessions.map(sess => (
+                                        <div key={sess.id} class="px-6 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between hover:bg-slate-50 dark:hover:bg-slate-850/20 transition gap-4">
+                                            <div class="space-y-1">
+                                                <div class="flex items-center gap-3">
+                                                    <span class="text-sm font-bold text-slate-800 dark:text-white">Session ID: {sess.id.slice(0,8)}</span>
+                                                    <span class={`px-2 py-0.5 rounded-full text-[10px] font-bold ${sess.status === 'completed' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400' : 'bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400'}`}>
+                                                        {sess.status.toUpperCase()}
+                                                    </span>
+                                                </div>
+                                                <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                                                    Source: <span class="font-mono text-slate-700 dark:text-slate-300">{sess.camera_source}</span> | Started: {new Date(sess.started_at).toLocaleString()}
+                                                </p>
+                                            </div>
+                                            <div class="flex items-center gap-6">
+                                                <div class="text-right hidden md:block">
+                                                    <p class="text-xs font-bold text-slate-700 dark:text-slate-300">Detections: {sess.total_detections}</p>
+                                                    <p class="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Avg Conf: {(sess.avg_confidence * 100).toFixed(0)}% | FPS: {sess.achieved_inference_fps || "0"}</p>
+                                                </div>
+                                                <button 
+                                                    onClick={() => viewSessionDetails(sess)}
+                                                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-xs font-bold rounded-xl text-white transition shadow-sm self-start sm:self-auto"
+                                                >
+                                                    View Frame Details
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {sessions.length === 0 && !loading && (
+                                        <div class="px-6 py-12 text-center text-slate-500 dark:text-slate-400 text-sm italic">
+                                            No detection sessions recorded. Go to "Live Microscope" and start a session!
+                                        </div>
+                                    )}
+                                    {loading && (
+                                        <div class="px-6 py-12 text-center text-slate-500 dark:text-slate-400 text-sm">
+                                            Loading history...
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
             );
         }
 
@@ -1879,7 +2196,21 @@
             const [recordingTime, setRecordingTime] = React.useState(0);
             const [captureLoading, setCaptureLoading] = React.useState(false);
             const [captureMessage, setCaptureMessage] = React.useState("");
-            
+
+            // Live Session Hooks
+            const [activeSession, setActiveSession] = React.useState(null);
+            const [liveFrame, setLiveFrame] = React.useState(null);
+            const [detections, setDetections] = React.useState([]);
+            const [stats, setStats] = React.useState({ achieved_fps: 0, total_detections: 0, class_counts: {}, avg_confidence: 0 });
+            const [cameraSource, setCameraSource] = React.useState("0");
+            const [sessionLoading, setSessionLoading] = React.useState(false);
+            const [errorMessage, setErrorMessage] = React.useState("");
+            const wsRef = React.useRef(null);
+
+            const [exportingClip, setExportingClip] = React.useState(false);
+            const [clipProgress, setClipProgress] = React.useState(0);
+            const [clipDownloadUrl, setClipDownloadUrl] = React.useState(null);
+
             React.useEffect(() => {
                 const getCams = async () => {
                     try {
@@ -1889,21 +2220,27 @@
                         if (res.ok) {
                             const data = await res.json();
                             setCameras(data);
-                            if (data.length > 0) setSelectedCam(data[0]);
+                            if (data.length > 0) {
+                                setSelectedCam(data[0]);
+                                setCameraSource(data[0].id.toString());
+                            }
                         }
                     } catch (err) {
                         console.error(err);
                     }
                 };
                 getCams();
+                return () => {
+                    if (wsRef.current) wsRef.current.close();
+                };
             }, [token]);
 
             const triggerCapture = async () => {
-                if (!selectedCam) return;
+                const targetSrc = activeSession ? activeSession.camera_source : (selectedCam ? selectedCam.id : 0);
                 setCaptureLoading(true);
                 setCaptureMessage("");
                 try {
-                    const res = await fetch(`${API_BASE}/camera/capture/${selectedCam.id}`, {
+                    const res = await fetch(`${API_BASE}/camera/capture/${targetSrc}`, {
                         method: "POST",
                         headers: { "Authorization": `Bearer ${token}` }
                     });
@@ -1918,52 +2255,26 @@
                 }
             };
 
-            React.useEffect(() => {
-                let interval = null;
-                if (isRecording) {
-                    interval = setInterval(() => {
-                        setRecordingTime(prev => prev + 1);
-                    }, 1000);
-                } else {
-                    setRecordingTime(0);
-                }
-                return () => clearInterval(interval);
-            }, [isRecording]);
-
-            const toggleRecording = () => {
-                setIsRecording(!isRecording);
-            };
-
-            const [exportingClip, setExportingClip] = React.useState(false);
-            const [clipProgress, setClipProgress] = React.useState(0);
-            const [clipDownloadUrl, setClipDownloadUrl] = React.useState(null);
-
-            const handleExportClip = async (imageId = null) => {
+            const handleExportClip = async () => {
                 setExportingClip(true);
                 setClipProgress(0);
                 setClipDownloadUrl(null);
                 
                 try {
-                    // 1. Post to /api/v1/clips/export (returns 202 Accepted immediately)
-                    const res = await fetch(`${API_BASE}/clips/export`, {
-                        method: "POST",
-                        headers: {
-                            "Authorization": `Bearer ${token}`,
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({
-                            image_id: imageId,
-                            duration_seconds: 5.0,
-                            draw_overlays: true,
-                            format: "mp4"
-                        })
+                    const targetId = activeSession ? activeSession.id : null;
+                    if (!targetId) {
+                        setExportingClip(false);
+                        return;
+                    }
+                    
+                    const res = await fetch(`${API_BASE}/video/sessions/${targetId}/clip`, {
+                        headers: { "Authorization": `Bearer ${token}` }
                     });
 
-                    if (res.status === 202 || res.ok) {
+                    if (res.ok) {
                         const clipData = await res.json();
                         const clipId = clipData.id;
 
-                        // 2. Non-blocking background polling
                         const pollInterval = setInterval(async () => {
                             try {
                                 const statusRes = await fetch(`${API_BASE}/clips/status/${clipId}`, {
@@ -1985,7 +2296,7 @@
                             } catch (err) {
                                 console.error("Status polling error:", err);
                             }
-                        }, 700);
+                        }, 1000);
                     }
                 } catch (err) {
                     console.error("Clip export error:", err);
@@ -1993,19 +2304,136 @@
                 }
             };
 
+            const startLiveSession = async () => {
+                setSessionLoading(true);
+                setErrorMessage("");
+                try {
+                    const res = await fetch(`${API_BASE}/video/sessions/start`, {
+                        method: "POST",
+                        headers: {
+                            "Authorization": `Bearer ${token}`,
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({ camera_source: cameraSource })
+                    });
+                    if (!res.ok) {
+                        const errData = await res.json();
+                        throw new Error(errData.detail || "Failed to start session");
+                    }
+                    const sess = await res.json();
+                    setActiveSession(sess);
+
+                    // Connect WebSocket
+                    const wsUrl = `${API_BASE.replace("http", "ws")}/video/sessions/${sess.id}/stream?token=${token}`;
+                    const ws = new WebSocket(wsUrl);
+                    wsRef.current = ws;
+
+                    ws.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        if (data.error) {
+                            setErrorMessage(data.error);
+                            stopLiveSession(sess.id);
+                        } else {
+                            if (data.frame) setLiveFrame(data.frame);
+                            if (data.detections) setDetections(data.detections);
+                            if (data.stats) setStats(data.stats);
+                        }
+                    };
+
+                    ws.onerror = (err) => {
+                        console.error("WS Error:", err);
+                        setErrorMessage("Microscope connection error.");
+                    };
+
+                    ws.onclose = () => {
+                        console.log("WS connection closed");
+                    };
+
+                } catch (err) {
+                    setErrorMessage(err.message);
+                    setActiveSession(null);
+                } finally {
+                    setSessionLoading(false);
+                }
+            };
+
+            const stopLiveSession = async (sessId = null) => {
+                const targetId = sessId || (activeSession && activeSession.id);
+                if (!targetId) return;
+
+                if (wsRef.current) {
+                    wsRef.current.close();
+                    wsRef.current = null;
+                }
+
+                try {
+                    const res = await fetch(`${API_BASE}/video/sessions/${targetId}/stop`, {
+                        method: "POST",
+                        headers: { "Authorization": `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        const summary = await res.json();
+                        setStats(summary);
+                    }
+                } catch (err) {
+                    console.error("Error stopping session:", err);
+                }
+
+                setActiveSession(null);
+                setLiveFrame(null);
+                setDetections([]);
+            };
+
             return (
                 <div class="grid grid-cols-1 lg:grid-cols-4 gap-8 h-[calc(100vh-120px)]">
-                    <div class="lg:col-span-3 flex flex-col bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
-                        <div class="px-6 py-3 border-b border-slate-800 bg-slate-900 flex justify-between items-center text-xs">
-                            <span class="text-slate-400 font-bold flex items-center gap-2">
-                                <span class="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse"></span>
-                                Live Feed: {selectedCam ? selectedCam.name : "Detecting..."}
+                    <div class="lg:col-span-3 flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm transition-colors duration-200">
+                        <div class="px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex justify-between items-center text-xs">
+                            <span class="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-2">
+                                <span class={`w-2.5 h-2.5 rounded-full ${activeSession ? 'bg-red-500 animate-pulse' : 'bg-slate-400'}`}></span>
+                                Live Feed: {activeSession ? `Session Active (Source: ${activeSession.camera_source})` : (selectedCam ? selectedCam.name : "Offline")}
                             </span>
-                            <span class="font-mono text-indigo-400 font-bold">24 FPS | Real-time AI Overlays Active</span>
+                            <span class="font-mono text-blue-600 dark:text-blue-400 font-bold">
+                                {activeSession ? `${stats.achieved_fps || "0.0"} FPS | Real-time AI Overlays Active` : "Awaiting session..."}
+                            </span>
                         </div>
                         
                         <div class="flex-1 relative overflow-hidden bg-black flex items-center justify-center min-h-[500px]">
-                            {selectedCam ? (
+                            {activeSession ? (
+                                <>
+                                    {liveFrame ? (
+                                        <img 
+                                            src={liveFrame}
+                                            class="absolute max-h-[500px] max-w-full z-0 object-contain"
+                                            style={{
+                                                filter: `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`
+                                            }}
+                                        />
+                                    ) : (
+                                        <div class="text-slate-400 text-xs font-semibold animate-pulse flex flex-col items-center gap-3">
+                                            <span class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></span>
+                                            Initializing Real-time Microscope Feed...
+                                        </div>
+                                    )}
+                                    <svg 
+                                        viewBox="0 0 800 600" 
+                                        class="absolute inset-0 pointer-events-none z-10 w-full h-full"
+                                        style={{ display: liveFrame ? "block" : "none" }}
+                                    >
+                                        {detections.map((det, idx) => {
+                                            const { x, y, w, h } = det.box;
+                                            return (
+                                                <g key={idx}>
+                                                    <rect x={x} y={y} width={w} height={h} fill="none" stroke="#2563eb" strokeWidth="2" />
+                                                    <rect x={x} y={y - 15 >= 0 ? y - 15 : 0} width={Math.max(90, w)} height="15" fill="#2563eb" />
+                                                    <text x={x + 3} y={y - 15 >= 0 ? y - 4 : 11} fill="#ffffff" fontSize="9" fontWeight="bold" fontFamily="Outfit, sans-serif">
+                                                        {det.class} (ID:{det.track_id})
+                                                    </text>
+                                                </g>
+                                            );
+                                        })}
+                                    </svg>
+                                </>
+                            ) : selectedCam ? (
                                 <img 
                                     src={`${API_BASE}/camera/stream/${selectedCam.id}`}
                                     class="absolute max-h-[500px] max-w-full z-0 object-contain"
@@ -2017,32 +2445,28 @@
                                 <div class="text-slate-500 text-sm">Searching for connected digital microscope cameras...</div>
                             )}
                             
-                            {crosshair && (
+                            {crosshair && !activeSession && (
                                 <div class="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
-                                    <div class="w-10 h-0.5 bg-indigo-500/50"></div>
-                                    <div class="w-0.5 h-10 bg-indigo-500/50 absolute"></div>
-                                    <div class="w-12 h-12 rounded-full border border-indigo-500/30 absolute"></div>
+                                    <div class="w-10 h-0.5 bg-blue-500/50"></div>
+                                    <div class="w-0.5 h-10 bg-blue-500/50 absolute"></div>
+                                    <div class="w-12 h-12 rounded-full border border-blue-500/30 absolute"></div>
                                 </div>
                             )}
                             
-                            {grid && (
+                            {grid && !activeSession && (
                                 <div class="absolute inset-0 pointer-events-none z-10 grid grid-cols-4 grid-rows-4 border-collapse opacity-25">
-                                    <div class="border border-slate-650"></div>
-                                    <div class="border border-slate-650"></div>
-                                    <div class="border border-slate-650"></div>
-                                    <div class="border border-slate-650"></div>
-                                    <div class="border border-slate-650"></div>
-                                    <div class="border border-slate-650"></div>
-                                    <div class="border border-slate-650"></div>
-                                    <div class="border border-slate-650"></div>
-                                    <div class="border border-slate-650"></div>
-                                    <div class="border border-slate-650"></div>
-                                    <div class="border border-slate-650"></div>
-                                    <div class="border border-slate-650"></div>
+                                    <div class="border border-slate-200 dark:border-slate-700"></div>
+                                    <div class="border border-slate-200 dark:border-slate-700"></div>
+                                    <div class="border border-slate-200 dark:border-slate-700"></div>
+                                    <div class="border border-slate-200 dark:border-slate-700"></div>
+                                    <div class="border border-slate-200 dark:border-slate-700"></div>
+                                    <div class="border border-slate-200 dark:border-slate-700"></div>
+                                    <div class="border border-slate-200 dark:border-slate-700"></div>
+                                    <div class="border border-slate-200 dark:border-slate-700"></div>
                                 </div>
                             )}
 
-                            {ruler && (
+                            {ruler && !activeSession && (
                                 <div class="absolute bottom-6 left-6 bg-slate-900/85 border border-slate-700 px-3 py-1 rounded text-[10px] text-slate-300 font-mono flex items-center gap-2 z-10">
                                     <div class="w-16 h-1 bg-white border-t border-b border-black"></div>
                                     <span>5.00 µm Scale Bar</span>
@@ -2050,62 +2474,139 @@
                             )}
                         </div>
                         
-                        <div class="px-6 py-4 border-t border-slate-800 bg-slate-900 flex justify-between items-center">
+                        <div class="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex justify-between items-center transition-colors duration-200">
                             <div class="flex flex-wrap items-center gap-3">
                                 <button 
                                     onClick={triggerCapture}
-                                    disabled={captureLoading || !selectedCam}
-                                    class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-xs font-bold text-white rounded-lg flex items-center gap-2 shadow"
+                                    disabled={captureLoading || (!selectedCam && !activeSession)}
+                                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-xs font-bold text-white rounded-xl flex items-center gap-2 shadow-sm transition"
                                 >
                                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
                                     Capture Snapshot
                                 </button>
                                 
-                                <button 
-                                    onClick={() => handleExportClip()}
-                                    disabled={exportingClip}
-                                    class="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-xs font-bold text-white rounded-lg flex items-center gap-2 shadow transition"
-                                >
-                                    {exportingClip ? (
-                                        <>
-                                            <span class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                                            <span>Background Exporting ({clipProgress}%)...</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-                                            <span>Export HD Video Clip (Background Task)</span>
-                                        </>
-                                    )}
-                                </button>
+                                {activeSession && (
+                                    <button 
+                                        onClick={handleExportClip}
+                                        disabled={exportingClip}
+                                        class="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-xs font-bold text-white rounded-xl flex items-center gap-2 shadow-sm transition"
+                                    >
+                                        {exportingClip ? (
+                                            <>
+                                                <span class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                                                <span>Background Exporting ({clipProgress}%)...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                                                <span>Export Session HD Clip</span>
+                                            </>
+                                        )}
+                                    </button>
+                                )}
 
                                 {clipDownloadUrl && (
                                     <a 
                                         href={clipDownloadUrl}
                                         download
-                                        class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white rounded-lg flex items-center gap-2 shadow animate-pulse"
+                                        class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white rounded-xl flex items-center gap-2 shadow animate-pulse"
                                     >
                                         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-                                        Download Rendered Clip (.mp4)
+                                        Download Clip (.mp4)
                                     </a>
                                 )}
                             </div>
                             {captureMessage && (
-                                <span class="text-xs font-semibold text-emerald-400 bg-emerald-950/20 border border-emerald-900 px-3 py-1.5 rounded">
+                                <span class="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/50 px-3 py-1.5 rounded-xl">
                                     {captureMessage}
                                 </span>
                             )}
                         </div>
                     </div>
 
-                    <div class="lg:col-span-1 space-y-6 bg-slate-900 border border-slate-800 p-6 rounded-xl overflow-y-auto custom-scrollbar shadow-xl">
+                    <div class="lg:col-span-1 space-y-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-2xl overflow-y-auto custom-scrollbar shadow-sm transition-colors duration-200">
+                        {/* Live AI Detection Session Controller */}
+                        <div class="p-4 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/50 rounded-2xl">
+                            <h3 class="text-xs font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3">Live AI Detection</h3>
+                            
+                            {activeSession ? (
+                                <div class="space-y-4">
+                                    <div class="flex items-center justify-between text-xs">
+                                        <span class="text-slate-500 dark:text-slate-400 font-semibold">Session Status:</span>
+                                        <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 text-[10px] font-bold animate-pulse">ACTIVE</span>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2 text-center text-xs">
+                                        <div class="p-2.5 bg-white dark:bg-slate-850 rounded-xl border border-slate-200 dark:border-slate-800">
+                                            <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">FPS</p>
+                                            <p class="text-lg font-black text-blue-600 dark:text-blue-400 font-mono">{stats.achieved_fps || "0.0"}</p>
+                                        </div>
+                                        <div class="p-2.5 bg-white dark:bg-slate-850 rounded-xl border border-slate-200 dark:border-slate-800">
+                                            <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Total Dets</p>
+                                            <p class="text-lg font-black text-slate-950 dark:text-white font-mono">{stats.total_detections || "0"}</p>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <p class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Detections counts</p>
+                                        <div class="max-h-36 overflow-y-auto space-y-1.5 custom-scrollbar pr-1">
+                                            {Object.entries(stats.class_counts || {}).map(([cls, count]) => (
+                                                <div key={cls} class="flex justify-between items-center text-xs font-semibold">
+                                                    <span class="text-slate-600 dark:text-slate-300 truncate">{cls}</span>
+                                                    <span class="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white font-mono">{count}</span>
+                                                </div>
+                                            ))}
+                                            {Object.keys(stats.class_counts || {}).length === 0 && (
+                                                <p class="text-[10px] text-slate-500 dark:text-slate-400 text-center italic py-2">No microorganisms detected yet...</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => stopLiveSession()}
+                                        class="w-full py-2.5 bg-red-600 hover:bg-red-500 text-xs font-bold text-white rounded-xl shadow-sm transition"
+                                    >
+                                        Stop AI Session
+                                    </button>
+                                </div>
+                            ) : (
+                                <div class="space-y-3.5">
+                                    <div>
+                                        <label class="block text-[10px] text-slate-500 dark:text-slate-400 uppercase mb-1.5 font-bold">Camera Source / RTSP / Video file</label>
+                                        <input 
+                                            type="text" 
+                                            class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl p-2 text-xs font-bold focus:outline-none"
+                                            value={cameraSource}
+                                            onChange={(e) => setCameraSource(e.target.value)}
+                                            placeholder="e.g. 0 or rtsp://..."
+                                        />
+                                    </div>
+                                    <button 
+                                        onClick={startLiveSession}
+                                        disabled={sessionLoading}
+                                        class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-xs font-bold text-white rounded-xl shadow-sm transition"
+                                    >
+                                        {sessionLoading ? "Initializing..." : "Start AI Live Session"}
+                                    </button>
+                                </div>
+                            )}
+
+                            {errorMessage && (
+                                <p class="mt-3 text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/50 p-2 rounded-xl text-center">
+                                    {errorMessage}
+                                </p>
+                            )}
+                        </div>
+
                         <div>
-                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Device Manager</h3>
-                            <label class="block text-[10px] text-slate-500 uppercase mb-2 font-bold">Select Active Microscope</label>
+                            <h3 class="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-4">Device Manager</h3>
+                            <label class="block text-[10px] text-slate-500 dark:text-slate-400 uppercase mb-2 font-bold">Select Active Microscope</label>
                             <select 
-                                class="w-full bg-slate-850 border border-slate-700 text-white rounded p-2 text-xs font-semibold focus:outline-none"
+                                disabled={!!activeSession}
+                                class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl p-2.5 text-xs font-semibold focus:outline-none disabled:opacity-50"
                                 value={selectedCam ? selectedCam.id : ""}
-                                onChange={(e) => setSelectedCam(cameras.find(c => c.id === parseInt(e.target.value)))}
+                                onChange={(e) => {
+                                    const cam = cameras.find(c => c.id === parseInt(e.target.value));
+                                    setSelectedCam(cam);
+                                    if (cam) setCameraSource(cam.id.toString());
+                                }}
                             >
                                 {cameras.map(c => (
                                     <option key={c.id} value={c.id}>{c.name}</option>
@@ -2114,67 +2615,54 @@
                         </div>
 
                         <div>
-                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Live Overlays</h3>
+                            <h3 class="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-4">Live Overlays</h3>
                             <div class="space-y-3 text-xs">
-                                <label class="flex items-center gap-2.5 text-slate-300 font-medium cursor-pointer">
-                                    <input type="checkbox" checked={crosshair} onChange={(e) => setCrosshair(e.target.checked)} class="rounded bg-slate-800 border-slate-700 text-indigo-500" />
+                                <label class="flex items-center gap-2.5 text-slate-600 dark:text-slate-300 font-medium cursor-pointer">
+                                    <input type="checkbox" checked={crosshair} onChange={(e) => setCrosshair(e.target.checked)} class="rounded bg-slate-100 dark:bg-slate-800 border-slate-350 dark:border-slate-700 text-blue-600" />
                                     Show Centroid Crosshair
                                 </label>
-                                <label class="flex items-center gap-2.5 text-slate-300 font-medium cursor-pointer">
-                                    <input type="checkbox" checked={grid} onChange={(e) => setGrid(e.target.checked)} class="rounded bg-slate-800 border-slate-700 text-indigo-500" />
+                                <label class="flex items-center gap-2.5 text-slate-600 dark:text-slate-300 font-medium cursor-pointer">
+                                    <input type="checkbox" checked={grid} onChange={(e) => setGrid(e.target.checked)} class="rounded bg-slate-100 dark:bg-slate-800 border-slate-350 dark:border-slate-700 text-blue-600" />
                                     Show Grid Overlay
                                 </label>
-                                <label class="flex items-center gap-2.5 text-slate-300 font-medium cursor-pointer">
-                                    <input type="checkbox" checked={ruler} onChange={(e) => setRuler(e.target.checked)} class="rounded bg-slate-800 border-slate-700 text-indigo-500" />
+                                <label class="flex items-center gap-2.5 text-slate-600 dark:text-slate-300 font-medium cursor-pointer">
+                                    <input type="checkbox" checked={ruler} onChange={(e) => setRuler(e.target.checked)} class="rounded bg-slate-100 dark:bg-slate-800 border-slate-350 dark:border-slate-700 text-blue-600" />
                                     Show 5.0µm Scale Ruler
                                 </label>
                             </div>
                         </div>
 
                         <div class="space-y-4">
-                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Image Adjustments</h3>
+                            <h3 class="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Image Adjustments</h3>
                             <div class="space-y-3">
                                 <div>
                                     <div class="flex justify-between text-[10px] text-slate-400 font-bold mb-1">
                                         <span>Brightness</span>
                                         <span>{brightness}%</span>
                                     </div>
-                                    <input type="range" min="50" max="150" value={brightness} onChange={(e) => setBrightness(parseInt(e.target.value))} class="w-full accent-indigo-500" />
+                                    <input type="range" min="50" max="150" value={brightness} onChange={(e) => setBrightness(parseInt(e.target.value))} class="w-full accent-blue-600" />
                                 </div>
                                 <div>
                                     <div class="flex justify-between text-[10px] text-slate-400 font-bold mb-1">
                                         <span>Contrast</span>
                                         <span>{contrast}%</span>
                                     </div>
-                                    <input type="range" min="50" max="150" value={contrast} onChange={(e) => setContrast(parseInt(e.target.value))} class="w-full accent-indigo-500" />
+                                    <input type="range" min="50" max="150" value={contrast} onChange={(e) => setContrast(parseInt(e.target.value))} class="w-full accent-blue-600" />
                                 </div>
                                 <div>
                                     <div class="flex justify-between text-[10px] text-slate-400 font-bold mb-1">
                                         <span>Saturation</span>
                                         <span>{saturation}%</span>
                                     </div>
-                                    <input type="range" min="50" max="150" value={saturation} onChange={(e) => setSaturation(parseInt(e.target.value))} class="w-full accent-indigo-500" />
+                                    <input type="range" min="50" max="150" value={saturation} onChange={(e) => setSaturation(parseInt(e.target.value))} class="w-full accent-blue-600" />
                                 </div>
                             </div>
-                        </div>
-
-                        <div>
-                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Stream Resolution</h3>
-                            <select 
-                                class="w-full bg-slate-850 border border-slate-700 text-white rounded p-2 text-xs font-semibold focus:outline-none"
-                                value={resolution}
-                                onChange={(e) => setResolution(e.target.value)}
-                            >
-                                <option value="720p">HD Stream (1280 x 720)</option>
-                                <option value="1080p">FHD Stream (1920 x 1080)</option>
-                                <option value="2K">2K Stream (2048 x 1536)</option>
-                            </select>
                         </div>
                     </div>
                 </div>
             );
         }
-
+        
         // Render React Application
         const root = ReactDOM.createRoot(document.getElementById("root"));
         root.render(<App />);

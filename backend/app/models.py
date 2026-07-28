@@ -93,6 +93,7 @@ class ClipExport(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.id"), nullable=True)
     image_id = Column(String, ForeignKey("images.id"), nullable=True)
+    session_id = Column(String, ForeignKey("detection_sessions.id"), nullable=True)
     file_name = Column(String, nullable=False)
     file_path = Column(String, nullable=True)
     format = Column(String, default="mp4")

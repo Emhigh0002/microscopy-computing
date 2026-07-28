@@ -239,9 +239,10 @@ def process_background_clip_export(clip_id: str):
     """
     Background worker function that processes and renders video clip exports asynchronously,
     updating progress in the database without blocking the API request/response cycle.
+    Supports compiling clip from an existing image, database SessionFrames, or simulated frames.
     """
     from app.database import SessionLocal
-    from app.models import ClipExport, Image as DBImage
+    from app.models import ClipExport, Image as DBImage, SessionFrame
     from app.core.config import settings
     from app.api.camera import generate_mock_live_frame
 
@@ -258,56 +259,114 @@ def process_background_clip_export(clip_id: str):
         output_filename = f"clip_{clip_id}.mp4"
         output_path = os.path.join(settings.CLIPS_DIR, output_filename)
         
-        duration = clip.duration_seconds or 5.0
-        fps = 24.0
-        total_frames = int(fps * duration)
-        
-        source_path = None
-        if clip.image_id:
-            img = db.query(DBImage).filter(DBImage.id == clip.image_id).first()
-            if img and os.path.exists(img.file_path):
-                source_path = img.file_path
+        # Check if this is a session clip export
+        session_frames = []
+        if clip.session_id:
+            session_frames = db.query(SessionFrame).filter(SessionFrame.session_id == clip.session_id).order_by(SessionFrame.timestamp.asc()).all()
+            
+        if session_frames:
+            total_frames = len(session_frames)
+            frame_w, frame_h = 600, 400
+            # Read first frame to match resolution
+            for f in session_frames:
+                if f.frame_path and os.path.exists(f.frame_path):
+                    sample_img = cv2.imread(f.frame_path)
+                    if sample_img is not None:
+                        frame_h, frame_w = sample_img.shape[:2]
+                        break
+            
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_path, fourcc, 5.0, (frame_w, frame_h))
+            if not out.isOpened():
+                fourcc = cv2.VideoWriter_fourcc(*'XVID')
+                out = cv2.VideoWriter(output_path, fourcc, 5.0, (frame_w, frame_h))
+                
+            for idx, f in enumerate(session_frames):
+                if f.frame_path and os.path.exists(f.frame_path):
+                    frame = cv2.imread(f.frame_path)
+                    if frame is not None:
+                        frame = cv2.resize(frame, (frame_w, frame_h))
+                else:
+                    frame = np.zeros((frame_h, frame_w, 3), dtype=np.uint8)
+                    cv2.putText(frame, "Blank Frame", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                    
+                if frame is None:
+                    frame = np.zeros((frame_h, frame_w, 3), dtype=np.uint8)
+                    
+                if clip.draw_overlays and f.detections:
+                    for d in f.detections:
+                        box = d.get("box", {})
+                        if box:
+                            bx = int(box.get("x", 0))
+                            by = int(box.get("y", 0))
+                            bw = int(box.get("w", 0))
+                            bh = int(box.get("h", 0))
+                            label = d.get("class", d.get("label_class", "unknown"))
+                            conf = d.get("confidence", 1.0)
+                            
+                            cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (16, 185, 129), 2)
+                            cv2.putText(frame, f"{label} {conf:.2f}", (bx, max(15, by - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (16, 185, 129), 1)
+                            
+                    timecode_str = f"TC: {idx/5.0:.2f}s | SESSION AI ACTIVE"
+                    cv2.putText(frame, timecode_str, (15, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (241, 102, 99), 1)
+                    
+                out.write(frame)
+                progress_pct = round(5.0 + (idx / max(1, total_frames - 1)) * 90.0, 1)
+                if idx % 5 == 0:
+                    clip.progress = progress_pct
+                    db.commit()
+            out.release()
+        else:
+            duration = clip.duration_seconds or 5.0
+            fps = 24.0
+            total_frames = int(fps * duration)
+            
+            source_path = None
+            if clip.image_id:
+                img = db.query(DBImage).filter(DBImage.id == clip.image_id).first()
+                if img and os.path.exists(img.file_path):
+                    source_path = img.file_path
 
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(output_path, fourcc, fps, (600, 400))
-        
-        if not out.isOpened():
-            fourcc = cv2.VideoWriter_fourcc(*'XVID')
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(output_path, fourcc, fps, (600, 400))
+            
+            if not out.isOpened():
+                fourcc = cv2.VideoWriter_fourcc(*'XVID')
+                out = cv2.VideoWriter(output_path, fourcc, fps, (600, 400))
 
-        cap = cv2.VideoCapture(source_path) if (source_path and os.path.exists(source_path)) else None
-        has_video = cap is not None and cap.isOpened()
-        
-        for f in range(total_frames):
-            if has_video:
-                ret, frame = cap.read()
-                if not ret:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            cap = cv2.VideoCapture(source_path) if (source_path and os.path.exists(source_path)) else None
+            has_video = cap is not None and cap.isOpened()
+            
+            for f in range(total_frames):
+                if has_video:
                     ret, frame = cap.read()
-                if frame is not None:
-                    frame = cv2.resize(frame, (600, 400))
+                    if not ret:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        ret, frame = cap.read()
+                    if frame is not None:
+                        frame = cv2.resize(frame, (600, 400))
+                    else:
+                        frame = generate_mock_live_frame(draw_annotations=clip.draw_overlays)
                 else:
                     frame = generate_mock_live_frame(draw_annotations=clip.draw_overlays)
-            else:
-                frame = generate_mock_live_frame(draw_annotations=clip.draw_overlays)
 
-            if clip.draw_overlays:
-                timecode_str = f"TC: {f/fps:.2f}s | MOTILITY AI ACTIVE"
-                cv2.putText(frame, timecode_str, (15, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (241, 102, 99), 1)
-                cv2.line(frame, (15, 380), (75, 380), (255, 255, 255), 2)
-                cv2.putText(frame, "5.0um Scale", (15, 370), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1)
+                if clip.draw_overlays:
+                    timecode_str = f"TC: {f/fps:.2f}s | MOTILITY AI ACTIVE"
+                    cv2.putText(frame, timecode_str, (15, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (241, 102, 99), 1)
+                    cv2.line(frame, (15, 380), (75, 380), (255, 255, 255), 2)
+                    cv2.putText(frame, "5.0um Scale", (15, 370), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1)
 
-            out.write(frame)
+                out.write(frame)
+                
+                progress_pct = round(5.0 + (f / max(1, total_frames - 1)) * 90.0, 1)
+                if f % 10 == 0:
+                    clip.progress = progress_pct
+                    db.commit()
+
+            if has_video:
+                cap.release()
+            out.release()
             
-            progress_pct = round(5.0 + (f / max(1, total_frames - 1)) * 90.0, 1)
-            if f % 10 == 0:
-                clip.progress = progress_pct
-                db.commit()
-
-        if has_video:
-            cap.release()
-        out.release()
-        
         clip.status = "completed"
         clip.progress = 100.0
         clip.file_path = output_path

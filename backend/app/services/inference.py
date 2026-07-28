@@ -3,8 +3,10 @@ import cv2
 import numpy as np
 import random
 import math
+import threading
 from typing import List, Dict, Any
 from app.models import Prediction, Image as DBImage
+from app.core.config import settings
 
 try:
     from ultralytics import YOLO
@@ -14,14 +16,8 @@ except ImportError:
 
 class InferenceService:
     def __init__(self):
-        self.classes = [
-            {"name": "Escherichia coli", "type": "bacterium", "avg_size_microns": 2.0},
-            {"name": "Staphylococcus aureus", "type": "bacterium", "avg_size_microns": 1.0},
-            {"name": "Bacillus subtilis", "type": "bacterium", "avg_size_microns": 3.0},
-            {"name": "Candida albicans", "type": "yeast", "avg_size_microns": 5.0},
-            {"name": "Aspergillus niger", "type": "mold", "avg_size_microns": 12.0},
-            {"name": "Spermatozoon", "type": "cell", "avg_size_microns": 4.5}
-        ]
+        self.lock = threading.Lock()
+        self.classes = settings.TARGET_CLASSES
         
         # Determine model path
         self.model_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "models")
@@ -31,20 +27,26 @@ class InferenceService:
         self.yolo_model = None
         self.load_yolo_model()
 
-    def load_yolo_model(self):
+    def load_yolo_model(self, model_path=None):
         if not ULTRALYTICS_AVAILABLE:
             print("Ultralytics library is not available. Running in OpenCV-only mode.")
             return
 
-        try:
-            if os.path.exists(self.custom_model_path):
-                print(f"Loading custom fine-tuned YOLO model from {self.custom_model_path}...")
-                self.yolo_model = YOLO(self.custom_model_path)
-            else:
-                # Initialize with a base nano model path if no custom model is trained yet
-                print("No custom fine-tuned YOLO model found. Inference will use base contours with mock predictions until model is trained.")
-        except Exception as e:
-            print(f"Failed to load YOLO model: {e}")
+        with self.lock:
+            try:
+                target_path = model_path or self.custom_model_path
+                if target_path and os.path.exists(target_path):
+                    print(f"Loading YOLO model from {target_path}...")
+                    self.yolo_model = YOLO(target_path)
+                else:
+                    if model_path:
+                        print(f"Requested model path {model_path} not found.")
+                    else:
+                        print("No custom fine-tuned YOLO model found. Inference will use base contours with mock predictions until model is trained.")
+                    self.yolo_model = None
+            except Exception as e:
+                print(f"Failed to load YOLO model: {e}")
+
 
     def detect_microorganisms(self, image_path: str, scale_microns_px: float) -> List[Dict[str, Any]]:
         """
@@ -53,9 +55,12 @@ class InferenceService:
         to deterministic OpenCV shape-contour analysis.
         """
         # 1. Run YOLO inference if model is loaded
-        if self.yolo_model is not None:
+        with self.lock:
+            model_to_use = self.yolo_model
+            
+        if model_to_use is not None:
             try:
-                results = self.yolo_model(image_path)
+                results = model_to_use(image_path)
                 detections = []
                 for result in results:
                     boxes = result.boxes

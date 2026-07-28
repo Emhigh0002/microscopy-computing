@@ -25,7 +25,8 @@ def request_clip_export(
     db_clip = ClipExport(
         user_id=current_user.id,
         image_id=payload.image_id,
-        file_name=f"Microscopy_Clip_{payload.image_id[:8] if payload.image_id else 'stream'}.mp4",
+        session_id=payload.session_id,
+        file_name=f"Microscopy_Clip_{payload.image_id[:8] if payload.image_id else payload.session_id[:8] if payload.session_id else 'stream'}.mp4",
         format=payload.format or "mp4",
         duration_seconds=payload.duration_seconds or 5.0,
         draw_overlays=payload.draw_overlays if payload.draw_overlays is not None else True,
