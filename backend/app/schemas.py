@@ -134,3 +134,26 @@ class RetrainResponse(BaseModel):
     job_id: str
     status: str
     message: str
+
+# --- CLIP EXPORT SCHEMAS ---
+class ClipExportRequest(BaseModel):
+    image_id: Optional[str] = None
+    duration_seconds: Optional[float] = 5.0
+    draw_overlays: Optional[bool] = True
+    format: Optional[str] = "mp4"
+
+class ClipExportResponse(BaseModel):
+    id: str
+    user_id: Optional[str] = None
+    image_id: Optional[str] = None
+    file_name: str
+    format: str
+    status: str # queued, processing, completed, failed
+    progress: float # 0.0 to 100.0
+    duration_seconds: float
+    draw_overlays: bool
+    download_url: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

@@ -234,3 +234,92 @@ class VideoTrackingService:
         }
 
 video_tracking_service = VideoTrackingService()
+
+def process_background_clip_export(clip_id: str):
+    """
+    Background worker function that processes and renders video clip exports asynchronously,
+    updating progress in the database without blocking the API request/response cycle.
+    """
+    from app.database import SessionLocal
+    from app.models import ClipExport, Image as DBImage
+    from app.core.config import settings
+    from app.api.camera import generate_mock_live_frame
+
+    db = SessionLocal()
+    try:
+        clip = db.query(ClipExport).filter(ClipExport.id == clip_id).first()
+        if not clip:
+            return
+            
+        clip.status = "processing"
+        clip.progress = 5.0
+        db.commit()
+        
+        output_filename = f"clip_{clip_id}.mp4"
+        output_path = os.path.join(settings.CLIPS_DIR, output_filename)
+        
+        duration = clip.duration_seconds or 5.0
+        fps = 24.0
+        total_frames = int(fps * duration)
+        
+        source_path = None
+        if clip.image_id:
+            img = db.query(DBImage).filter(DBImage.id == clip.image_id).first()
+            if img and os.path.exists(img.file_path):
+                source_path = img.file_path
+
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(output_path, fourcc, fps, (600, 400))
+        
+        if not out.isOpened():
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')
+            out = cv2.VideoWriter(output_path, fourcc, fps, (600, 400))
+
+        cap = cv2.VideoCapture(source_path) if (source_path and os.path.exists(source_path)) else None
+        has_video = cap is not None and cap.isOpened()
+        
+        for f in range(total_frames):
+            if has_video:
+                ret, frame = cap.read()
+                if not ret:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ret, frame = cap.read()
+                if frame is not None:
+                    frame = cv2.resize(frame, (600, 400))
+                else:
+                    frame = generate_mock_live_frame(draw_annotations=clip.draw_overlays)
+            else:
+                frame = generate_mock_live_frame(draw_annotations=clip.draw_overlays)
+
+            if clip.draw_overlays:
+                timecode_str = f"TC: {f/fps:.2f}s | MOTILITY AI ACTIVE"
+                cv2.putText(frame, timecode_str, (15, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (241, 102, 99), 1)
+                cv2.line(frame, (15, 380), (75, 380), (255, 255, 255), 2)
+                cv2.putText(frame, "5.0um Scale", (15, 370), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1)
+
+            out.write(frame)
+            
+            progress_pct = round(5.0 + (f / max(1, total_frames - 1)) * 90.0, 1)
+            if f % 10 == 0:
+                clip.progress = progress_pct
+                db.commit()
+
+        if has_video:
+            cap.release()
+        out.release()
+        
+        clip.status = "completed"
+        clip.progress = 100.0
+        clip.file_path = output_path
+        clip.download_url = f"/api/v1/clips/{clip_id}/download"
+        db.commit()
+        
+    except Exception as e:
+        print(f"Error in background clip export task: {e}")
+        clip = db.query(ClipExport).filter(ClipExport.id == clip_id).first()
+        if clip:
+            clip.status = "failed"
+            clip.progress = 0.0
+            db.commit()
+    finally:
+        db.close()

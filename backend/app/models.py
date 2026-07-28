@@ -86,3 +86,19 @@ class AuditLog(Base):
     action = Column(String, nullable=False)  # login, upload, annotate, delete, train, export
     details = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class ClipExport(Base):
+    __tablename__ = "clip_exports"
+    
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    image_id = Column(String, ForeignKey("images.id"), nullable=True)
+    file_name = Column(String, nullable=False)
+    file_path = Column(String, nullable=True)
+    format = Column(String, default="mp4")
+    status = Column(String, default="queued")  # queued, processing, completed, failed
+    progress = Column(Float, default=0.0)      # 0.0 to 100.0
+    duration_seconds = Column(Float, default=5.0)
+    draw_overlays = Column(Boolean, default=True)
+    download_url = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

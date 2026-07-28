@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "data/uploads")
     REPORTS_DIR: str = os.getenv("REPORTS_DIR", "data/reports")
     MODEL_DIR: str = os.getenv("MODEL_DIR", "data/models")
+    CLIPS_DIR: str = os.getenv("CLIPS_DIR", "data/clips")
     
     # Create directories if they do not exist
     model_config = ConfigDict(case_sensitive=True)
@@ -29,3 +30,4 @@ settings = Settings()
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 os.makedirs(settings.REPORTS_DIR, exist_ok=True)
 os.makedirs(settings.MODEL_DIR, exist_ok=True)
+os.makedirs(settings.CLIPS_DIR, exist_ok=True)
