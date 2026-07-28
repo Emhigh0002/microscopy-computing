@@ -157,3 +157,41 @@ class ClipExportResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# --- DETECTION SESSION SCHEMAS ---
+class DetectionSessionCreate(BaseModel):
+    camera_source: Optional[str] = "0"
+    model_id: Optional[str] = None
+
+class DetectionSessionResponse(BaseModel):
+    id: str
+    user_id: Optional[str] = None
+    model_id: Optional[str] = None
+    camera_source: str
+    status: str
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    class_counts: Optional[Dict[str, int]] = None
+    avg_confidence: float
+    total_frames_processed: int
+    total_frames_dropped: int
+    total_detections: int
+    achieved_inference_fps: float
+
+    class Config:
+        from_attributes = True
+
+class SessionFrameCreate(BaseModel):
+    detections: List[Dict[str, Any]]
+    frame_path: Optional[str] = None
+
+class SessionFrameResponse(BaseModel):
+    id: str
+    session_id: str
+    timestamp: datetime
+    frame_path: Optional[str] = None
+    detections: List[Dict[str, Any]]
+
+    class Config:
+        from_attributes = True
+

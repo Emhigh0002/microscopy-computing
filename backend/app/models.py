@@ -102,3 +102,29 @@ class ClipExport(Base):
     draw_overlays = Column(Boolean, default=True)
     download_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class DetectionSession(Base):
+    __tablename__ = "detection_sessions"
+    
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    model_id = Column(String, ForeignKey("models.id"), nullable=True)
+    camera_source = Column(String, nullable=False, default="0")
+    status = Column(String, default="active")  # active, completed, error
+    started_at = Column(DateTime, default=datetime.utcnow)
+    ended_at = Column(DateTime, nullable=True)
+    class_counts = Column(JSON, nullable=True)
+    avg_confidence = Column(Float, default=0.0)
+    total_frames_processed = Column(Integer, default=0)
+    total_frames_dropped = Column(Integer, default=0)
+    total_detections = Column(Integer, default=0)
+    achieved_inference_fps = Column(Float, default=0.0)
+
+class SessionFrame(Base):
+    __tablename__ = "session_frames"
+    
+    id = Column(String, primary_key=True, default=generate_uuid)
+    session_id = Column(String, ForeignKey("detection_sessions.id"), nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    frame_path = Column(String, nullable=True)
+    detections = Column(JSON, nullable=False)  # [{class, confidence, box, track_id}]

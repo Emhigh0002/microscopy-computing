@@ -5,8 +5,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.core.config import settings
 from app.database import engine, Base, SessionLocal
-from app.api import auth, images, annotations, predictions, reports, assistant, training, camera, clips
+from app.api import auth, images, annotations, predictions, reports, assistant, training, camera, clips, sessions
 from app.models import User, Model
+
 from app.core.security import get_password_hash
 
 # Create tables
@@ -36,6 +37,8 @@ app.include_router(reports.router, prefix=f"{settings.API_V1_STR}/reports", tags
 app.include_router(assistant.router, prefix=f"{settings.API_V1_STR}/assistant", tags=["AI Clinical Assistant"])
 app.include_router(training.router, prefix=f"{settings.API_V1_STR}/training", tags=["Model Retraining"])
 app.include_router(clips.router, prefix=f"{settings.API_V1_STR}/clips", tags=["Video Clip Exports"])
+app.include_router(sessions.router, prefix=f"{settings.API_V1_STR}/sessions", tags=["Live Detection Sessions"])
+
 
 @app.on_event("startup")
 def startup_populate_data():
